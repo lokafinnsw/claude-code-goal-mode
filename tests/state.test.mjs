@@ -143,4 +143,25 @@ describe('GoalStateSchema', () => {
     };
     expect(() => GoalStateSchema.parse(state)).toThrow();
   });
+
+  it('rejects empty cursor', () => {
+    const state = {
+      schema_version: 1,
+      goal_id: 'd',
+      lifecycle: 'draft',
+      cursor: '',
+      budget: {
+        iterations: { used: 0, max: 0 },
+        tokens: { used: 0, max: 0 },
+        wallclock: { started_at: '2026-05-09T00:00:00.000Z', max_seconds: 0 },
+      },
+      session_id: 's',
+      started_at: null,
+      paused_at: null,
+      ended_at: null,
+      ended_reason: null,
+      history: [],
+    };
+    expect(() => GoalStateSchema.parse(state)).toThrow();
+  });
 });
