@@ -230,6 +230,26 @@ describe('final-summary.md snapshot', () => {
   });
 });
 
+describe('unmet-summary.md snapshot render', () => {
+  it('renders against a representative unmet-state', () => {
+    const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/unmet-summary.md'), 'utf8');
+    const ctx = {
+      blocked_task_id: 's.e1.t1',
+      blocked_task_title: 'Implement RT-rotation',
+      blocker_reason: '3 consecutive review cycles ended in NOGO/REVISE',
+      review_attempts: 3,
+      iterations_used: 47,
+      tokens_used: 980000,
+      wallclock_minutes: 142,
+      tasks_achieved: 0,
+      tasks_total: 1,
+      ts: '2026-05-10T01:30:00Z',
+    };
+    const out = render(tpl, ctx);
+    expect(out).toMatchSnapshot();
+  });
+});
+
 describe('audit-instructions.md snapshot', () => {
   it('renders with criteria, evidence (with nested file/line), and validate', () => {
     const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/audit-instructions.md'), 'utf8');

@@ -1,0 +1,143 @@
+import { describe, it, expect } from 'vitest';
+import { runStopHook } from '../engine/stop-hook.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { saveState, saveTree } from '../engine/state.mjs';
+
+function setupProject(tree, state, transcriptText) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-int-'));
+  saveTree(root, tree);
+  saveState(root, state);
+  const tPath = path.join(root, 'transcript.jsonl');
+  fs.writeFileSync(tPath, transcriptText);
+  return { root, tPath };
+}
+
+const minimalTree = () => ({
+  schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+  root: {
+    id: 't', type: 'task', title: 'T', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pursuing',
+    evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [],
+  },
+});
+
+const pursuingState = (sessionId = 'sess-1') => ({
+  schema_version: 1, goal_id: 'g', lifecycle: 'pursuing', cursor: 't',
+  budget: { iterations: { used: 0, max: 100 }, tokens: { used: 0, max: 1_000_000 }, wallclock: { started_at: new Date().toISOString(), max_seconds: 14400 } },
+  session_id: sessionId,
+  started_at: new Date().toISOString(), paused_at: null, ended_at: null, ended_reason: null, history: [],
+});
+
+describe('runStopHook integration', () => {
+  it('returns block decision with rendered continuation when pursuing', async () => {
+    const { root, tPath } = setupProject(minimalTree(), pursuingState(), JSON.stringify({
+      message: { role: 'assistant', content: [{ type: 'text', text: 'no tags here' }] },
+    }) + '\n');
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.exit).toBe(0);
+    expect(result.stdout.decision).toBe('block');
+    expect(result.stdout.reason).toContain('Goal continuation');
+    expect(result.stdout.systemMessage).toMatch(/🎯/);
+  });
+
+  it('exits 0 with no output when session_id mismatches', async () => {
+    const { root, tPath } = setupProject(minimalTree(), pursuingState('sess-1'), '');
+    const result = await runStopHook({ stdin: { session_id: 'sess-other', transcript_path: tPath }, projectRoot: root });
+    expect(result.exit).toBe(0);
+    expect(result.stdout).toBeNull();
+  });
+
+  it('exits 0 when no goal active (state file missing)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-int-'));
+    const tPath = path.join(root, 't.jsonl');
+    fs.writeFileSync(tPath, '');
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.exit).toBe(0);
+    expect(result.stdout).toBeNull();
+  });
+
+  it('on lifecycle paused returns exit 0 with no output', async () => {
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.lifecycle = 'paused';
+    const { root, tPath } = setupProject(tree, state, '');
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.exit).toBe(0);
+    expect(result.stdout).toBeNull();
+  });
+
+  // NEW: agent achieves task via tags → engine renders final-summary.md (lifecycle achieved)
+  it('renders final-summary when agent achieves via tags (lifecycle transitions to achieved)', async () => {
+    const transcriptObj = {
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: '<evidence file="x" criterion="0" note="done" />\n<task-status>achieved</task-status>',
+        }],
+      },
+    };
+    const { root, tPath } = setupProject(minimalTree(), pursuingState(), JSON.stringify(transcriptObj) + '\n');
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.exit).toBe(0);
+    expect(result.stdout.decision).toBe('block');
+    expect(result.stdout.systemMessage).toBe('✅ goal achieved');
+    expect(result.stdout.reason).toContain('Goal achieved');
+  });
+
+  // NEW: agent blocks task 3x → engine renders unmet-summary.md (lifecycle transitions to unmet)
+  it('renders unmet-summary when task blocks 3x in a row (lifecycle transitions to unmet)', async () => {
+    // Set up a tree+state that's already at review_attempts=2 with 2 prior node-blocked events.
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.history = [
+      { ts: '2026-05-09T00:00:00.000Z', iteration: 1, event: 'node-blocked', node_id: 't', payload: {} },
+      { ts: '2026-05-09T00:00:01.000Z', iteration: 2, event: 'node-blocked', node_id: 't', payload: {} },
+    ];
+    tree.root.review_attempts = 2;
+    tree.root.status = 'pursuing';
+    state.budget.iterations.used = 2;
+
+    // Now an agent text emits another block → that's #3.
+    const transcriptObj = {
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: '<task-status>blocked</task-status>\n<blocker>still cannot solve</blocker>',
+        }],
+      },
+    };
+    const { root, tPath } = setupProject(tree, state, JSON.stringify(transcriptObj) + '\n');
+
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.exit).toBe(0);
+    expect(result.stdout.decision).toBe('block');
+    expect(result.stdout.systemMessage).toBe('🔴 goal unmet');
+    expect(result.stdout.reason).toContain('could not be completed');
+    expect(result.stdout.reason).toContain('still cannot solve');
+  });
+
+  // NEW: review-pending cursor renders continuation-review.md
+  it('renders continuation-review when cursor is review-pending', async () => {
+    const tree = minimalTree();
+    tree.root.review = ['art-x'];
+    tree.root.status = 'review-pending';
+    tree.root.evidence = [
+      { ts: '2026-05-09T00:00:00.000Z', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'n' },
+    ];
+    const state = pursuingState();
+    state.cursor = 't';
+
+    const { root, tPath } = setupProject(tree, state, JSON.stringify({
+      message: { role: 'assistant', content: [{ type: 'text', text: 'no tags' }] },
+    }) + '\n');
+
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.exit).toBe(0);
+    expect(result.stdout.decision).toBe('block');
+    expect(result.stdout.reason).toContain('review-pending');
+    expect(result.stdout.reason).toContain('art-x');
+  });
+});

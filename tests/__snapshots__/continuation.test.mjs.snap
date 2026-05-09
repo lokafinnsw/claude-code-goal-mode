@@ -214,3 +214,42 @@ Every leaf task in this plan is now \`achieved\`. This is the final summary turn
 After this turn, the goal lifecycle is \`achieved\`. Run \`/goal:clear --archive\` to snapshot and reset.
 "
 `;
+
+exports[`unmet-summary.md snapshot render > renders against a representative unmet-state 1`] = `
+"# 🔴 Goal — could not be completed (terminal: unmet)
+
+The plan-tree could not be advanced past task **s.e1.t1** ("Implement RT-rotation"). After 3 consecutive review cycles or block iterations on the same node, the goal lifecycle was marked \`unmet\`.
+
+**Blocking node:** s.e1.t1
+**Blocker reason:** 3 consecutive review cycles ended in NOGO/REVISE
+**Review attempts:** 3/3
+
+## What this means
+
+- The engine has stopped advancing the cursor and will not invoke you again for this goal until \`/goal:clear\` (which archives this run and clears \`.claude/goals/active/\`).
+- The user can manually intervene via \`/goal:approve\` if they judge the work to be acceptable, or restructure the plan-tree and run \`/goal:plan\` to start a new attempt.
+- This is NOT a bug in the engine. It is the engine refusing to declare success when the evidence does not support it. "Proxy-signal collapse" is the explicit failure mode being prevented.
+
+## Final state
+
+- Total iterations: 47
+- Total tokens (best-effort): 980000
+- Wall-clock: 142 minutes
+- Tasks achieved: 0/1
+
+## What to do this turn
+
+1. Append a closing block to \`.claude/goals/active/notes.md\`:
+   \`\`\`
+   ## Goal unmet at iteration 47 (2026-05-10T01:30:00Z)
+
+   - Blocked on: s.e1.t1 — Implement RT-rotation
+   - Reason: 3 consecutive review cycles ended in NOGO/REVISE
+   - Tasks achieved: 0/1
+   \`\`\`
+2. Surface a 3–5 sentence summary to chat so the user understands the failure: which task blocked, what the blocker was, what they reviewed (cite verdicts if any), and whether the failure is recoverable (rewrite criteria, change reviewer, etc.) or terminal.
+3. Do NOT emit \`<task-status>achieved</task-status>\` for any node. The engine has already terminated this run; emitting evidence will not restart it.
+
+After this turn, run \`/goal:clear --archive\` to snapshot and reset.
+"
+`;
