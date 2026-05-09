@@ -83,3 +83,80 @@ describe('applyMutations achieved → advance', () => {
     expect(s2.cursor).toBe('s.t1');
   });
 });
+
+describe('applyMutations review flow', () => {
+  function twoTaskTree() {
+    return {
+      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      root: {
+        id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
+        review: [], validate: null, work_front: null, status: 'pursuing',
+        evidence: [], blocker_reason: null, review_attempts: 0, notes: [],
+        children: [
+          { id: 's.t1', type: 'task', title: 't1', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pursuing', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
+          { id: 's.t2', type: 'task', title: 't2', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pending', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
+        ],
+      },
+    };
+  }
+
+  it('marks review-pending and records review-request', () => {
+    const tree = twoTaskTree();
+    tree.root.children[0].review = ['art-x', 'design-y'];
+    const state = mkState('s.t1');
+    const tags = [
+      { kind: 'evidence', file: 'x', line: null, criterion: 0, note: 'n', command: null, exit_code: null },
+      { kind: 'task-status', value: 'achieved' },
+      { kind: 'review-request', agents: ['art-x', 'design-y'] },
+    ];
+    const { tree: t2, state: s2 } = applyMutations(tree, state, tags, '2026-05-09T01:00:00.000Z');
+    expect(t2.root.children[0].status).toBe('review-pending');
+    expect(s2.cursor).toBe('s.t1');
+  });
+
+  it('advances on all-GO verdicts', () => {
+    const tree = twoTaskTree();
+    tree.root.children[0].review = ['art-x', 'design-y'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].evidence = [
+      { ts: 't', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'n' },
+    ];
+    const state = mkState('s.t1');
+    const tags = [
+      { kind: 'audit-verdict', agent: 'art-x', status: 'GO', text: 'ok' },
+      { kind: 'audit-verdict', agent: 'design-y', status: 'GO', text: 'ok' },
+    ];
+    const { tree: t2, state: s2 } = applyMutations(tree, state, tags, '2026-05-09T02:00:00.000Z');
+    expect(t2.root.children[0].status).toBe('achieved');
+    expect(s2.cursor).toBe('s.t2');
+  });
+
+  it('returns to pursuing on any NOGO and increments review_attempts', () => {
+    const tree = twoTaskTree();
+    tree.root.children[0].review = ['art-x'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].review_attempts = 0;
+    const state = mkState('s.t1');
+    const tags = [
+      { kind: 'audit-verdict', agent: 'art-x', status: 'NOGO', text: 'no' },
+    ];
+    const { tree: t2, state: s2 } = applyMutations(tree, state, tags, '2026-05-09T02:00:00.000Z');
+    expect(t2.root.children[0].status).toBe('pursuing');
+    expect(t2.root.children[0].review_attempts).toBe(1);
+    expect(s2.cursor).toBe('s.t1');
+  });
+
+  it('marks node blocked after 3 consecutive NOGO cycles', () => {
+    const tree = twoTaskTree();
+    tree.root.children[0].review = ['art-x'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].review_attempts = 2;
+    const state = mkState('s.t1');
+    const tags = [
+      { kind: 'audit-verdict', agent: 'art-x', status: 'NOGO', text: 'still no' },
+    ];
+    const { tree: t2 } = applyMutations(tree, state, tags, '2026-05-09T02:00:00.000Z');
+    expect(t2.root.children[0].review_attempts).toBe(3);
+    expect(t2.root.children[0].status).toBe('blocked');
+  });
+});

@@ -71,5 +71,38 @@ export function applyMutations(treeIn, stateIn, tags, ts) {
     }
   }
 
+  const reviewReq = tags.find(t => t.kind === 'review-request');
+  if (reviewReq && cursorNode.status === 'pursuing' && allCriteriaCovered(cursorNode)) {
+    cursorNode.status = 'review-pending';
+    history.push({ ts, iteration: state.budget.iterations.used, event: 'review-requested', node_id: cursorNode.id, payload: { agents: reviewReq.agents } });
+  }
+
+  const verdicts = tags.filter(t => t.kind === 'audit-verdict');
+  if (verdicts.length > 0 && cursorNode.status === 'review-pending') {
+    for (const v of verdicts) {
+      history.push({
+        ts, iteration: state.budget.iterations.used,
+        event: 'review-verdict', node_id: cursorNode.id,
+        payload: { agent: v.agent, status: v.status, text: v.text },
+      });
+    }
+    const allGo = cursorNode.review.every(agent => verdicts.find(v => v.agent === agent && v.status === 'GO'));
+    const anyNo = verdicts.some(v => v.status === 'NOGO' || v.status === 'REVISE');
+    if (allGo) {
+      cursorNode.status = 'achieved';
+      history.push({ ts, iteration: state.budget.iterations.used, event: 'cursor-advanced', node_id: cursorNode.id, payload: { from: 'review-go' } });
+      const nextTask = nextPendingTaskAfter(tree, cursorNode.id);
+      state.cursor = nextTask ? nextTask.id : cursorNode.id;
+    } else if (anyNo) {
+      cursorNode.status = 'pursuing';
+      cursorNode.review_attempts += 1;
+      if (cursorNode.review_attempts >= 3) {
+        cursorNode.status = 'blocked';
+        cursorNode.blocker_reason = `3 consecutive review cycles ended in NOGO/REVISE`;
+        history.push({ ts, iteration: state.budget.iterations.used, event: 'node-blocked', node_id: cursorNode.id, payload: { reason: cursorNode.blocker_reason } });
+      }
+    }
+  }
+
   return { tree, state, history };
 }
