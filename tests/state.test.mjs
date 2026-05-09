@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { GoalTreeSchema, GoalStateSchema } from '../engine/state.mjs';
+import { GoalTreeSchema, GoalStateSchema, loadState, saveState, loadTree, saveTree } from '../engine/state.mjs';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 
 describe('GoalTreeSchema', () => {
   it('accepts a minimal valid tree', () => {
@@ -163,5 +166,75 @@ describe('GoalStateSchema', () => {
       history: [],
     };
     expect(() => GoalStateSchema.parse(state)).toThrow();
+  });
+});
+
+function tmpdir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'goal-state-'));
+}
+
+describe('atomic save/load', () => {
+  it('saveState then loadState round-trips', () => {
+    const dir = tmpdir();
+    const state = {
+      schema_version: 1,
+      goal_id: 'g',
+      lifecycle: 'draft',
+      cursor: 'a',
+      budget: {
+        iterations: { used: 0, max: 10 },
+        tokens: { used: 0, max: 100 },
+        wallclock: { started_at: '2026-05-09T00:00:00.000Z', max_seconds: 60 },
+      },
+      session_id: 's',
+      started_at: null,
+      paused_at: null,
+      ended_at: null,
+      ended_reason: null,
+      history: [],
+    };
+    saveState(dir, state);
+    const loaded = loadState(dir);
+    expect(loaded).toEqual(state);
+  });
+
+  it('loadState returns null when file is missing', () => {
+    const dir = tmpdir();
+    expect(loadState(dir)).toBeNull();
+  });
+
+  it('loadState returns null on invalid JSON and writes a .broken backup', () => {
+    const dir = tmpdir();
+    const target = path.join(dir, '.claude/goals/active/state.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, 'not json');
+    expect(loadState(dir)).toBeNull();
+    const files = fs.readdirSync(path.dirname(target));
+    expect(files.some(f => f.startsWith('state.json.broken-'))).toBe(true);
+  });
+
+  it('saveState writes via .tmp and renames atomically', () => {
+    const dir = tmpdir();
+    const state = {
+      schema_version: 1,
+      goal_id: 'g',
+      lifecycle: 'draft',
+      cursor: 'a',
+      budget: {
+        iterations: { used: 0, max: 10 },
+        tokens: { used: 0, max: 100 },
+        wallclock: { started_at: '2026-05-09T00:00:00.000Z', max_seconds: 60 },
+      },
+      session_id: 's',
+      started_at: null,
+      paused_at: null,
+      ended_at: null,
+      ended_reason: null,
+      history: [],
+    };
+    saveState(dir, state);
+    const target = path.join(dir, '.claude/goals/active/state.json');
+    expect(fs.existsSync(target)).toBe(true);
+    expect(fs.existsSync(target + '.tmp')).toBe(false);
   });
 });

@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import fs from 'node:fs';
+import path from 'node:path';
+import { statePath, treePath, activeDir } from './paths.mjs';
 
 export const NodeStatusSchema = z.enum([
   'pending',
@@ -126,3 +129,44 @@ export const GoalStateSchema = z.object({
   ended_reason: z.string().nullable(),
   history: z.array(HistoryEntrySchema),
 });
+
+function atomicWrite(target, content) {
+  const dir = path.dirname(target);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = target + '.tmp';
+  fs.writeFileSync(tmp, content);
+  fs.renameSync(tmp, target);
+}
+
+function readWithBackup(target, parser) {
+  if (!fs.existsSync(target)) return null;
+  const raw = fs.readFileSync(target, 'utf8');
+  try {
+    const parsed = JSON.parse(raw);
+    return parser.parse(parsed);
+  } catch (err) {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.copyFileSync(target, `${target}.broken-${ts}`);
+    return null;
+  }
+}
+
+export function loadState(projectRoot) {
+  return readWithBackup(statePath(projectRoot), GoalStateSchema);
+}
+
+export function saveState(projectRoot, state) {
+  GoalStateSchema.parse(state);
+  fs.mkdirSync(activeDir(projectRoot), { recursive: true });
+  atomicWrite(statePath(projectRoot), JSON.stringify(state, null, 2));
+}
+
+export function loadTree(projectRoot) {
+  return readWithBackup(treePath(projectRoot), GoalTreeSchema);
+}
+
+export function saveTree(projectRoot, tree) {
+  GoalTreeSchema.parse(tree);
+  fs.mkdirSync(activeDir(projectRoot), { recursive: true });
+  atomicWrite(treePath(projectRoot), JSON.stringify(tree, null, 2));
+}
