@@ -1,5 +1,5 @@
 {
-  "description": "Goal Mode plugin Stop hook (no-op in Phase 0).",
+  "description": "Goal Mode plugin Stop hook — invokes the Node engine to drive long-horizon plan-tree execution. Reads JSON stdin from Claude Code, returns JSON stdout for the continuation loop.",
   "hooks": {
     "Stop": [
       {

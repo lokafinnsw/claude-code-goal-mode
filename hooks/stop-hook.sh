@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Phase 0: no-op stop hook. Replaced by Node engine in Phase 4.
+# Stop hook shim — runs the Node engine.
+# CLAUDE_PLUGIN_ROOT is set by Claude Code for hooks; it points to the
+# plugin's installation directory.
+# Project root (cwd of the user's Claude Code session) is the working dir,
+# inherited from the hook caller.
 set -euo pipefail
-# Drain stdin so Claude Code doesn't block on the pipe.
-cat >/dev/null
-exit 0
+exec node "${CLAUDE_PLUGIN_ROOT}/engine/stop-hook-cli.mjs"
