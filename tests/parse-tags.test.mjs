@@ -35,3 +35,37 @@ describe('parseTags evidence', () => {
     expect(out.map(t => t.criterion)).toEqual([0, 1]);
   });
 });
+
+describe('parseTags status / blocker / review / verdict', () => {
+  it('parses <task-status>', () => {
+    expect(parseTags('<task-status>achieved</task-status>')).toEqual([
+      { kind: 'task-status', value: 'achieved' },
+    ]);
+  });
+
+  it('rejects unknown task-status values', () => {
+    expect(parseTags('<task-status>wat</task-status>')).toEqual([]);
+  });
+
+  it('parses <blocker>', () => {
+    expect(parseTags('<blocker>cannot find file</blocker>')).toEqual([
+      { kind: 'blocker', reason: 'cannot find file' },
+    ]);
+  });
+
+  it('parses <review-request agents="a,b"/>', () => {
+    expect(parseTags('<review-request agents="a,b"/>')).toEqual([
+      { kind: 'review-request', agents: ['a', 'b'] },
+    ]);
+  });
+
+  it('parses <audit-verdict>', () => {
+    expect(parseTags('<audit-verdict agent="x" status="GO">looks good</audit-verdict>')).toEqual([
+      { kind: 'audit-verdict', agent: 'x', status: 'GO', text: 'looks good' },
+    ]);
+  });
+
+  it('rejects audit-verdict with unknown status', () => {
+    expect(parseTags('<audit-verdict agent="x" status="MEH">x</audit-verdict>')).toEqual([]);
+  });
+});
