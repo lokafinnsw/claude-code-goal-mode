@@ -61,3 +61,68 @@ export const GoalTreeSchema = z.object({
   approved_at: z.string().datetime().nullable(),
   root: GoalNodeSchema,
 });
+
+export const LifecycleSchema = z.enum([
+  'draft',
+  'approved',
+  'pursuing',
+  'paused',
+  'achieved',
+  'unmet',
+  'budget-limited',
+]);
+
+export const HistoryEventSchema = z.enum([
+  'plan-created',
+  'plan-approved',
+  'started',
+  'paused',
+  'resumed',
+  'cursor-advanced',
+  'node-blocked',
+  'review-requested',
+  'review-verdict',
+  'evidence-added',
+  'budget-warning',
+  'budget-exhausted',
+  'achieved',
+  'unmet',
+  'cleared',
+]);
+
+export const HistoryEntrySchema = z.object({
+  ts: z.string().datetime(),
+  iteration: z.number().int().nonnegative(),
+  event: HistoryEventSchema,
+  node_id: z.string().nullable(),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const TripleBudgetSchema = z.object({
+  iterations: z.object({
+    used: z.number().int().nonnegative(),
+    max: z.number().int().nonnegative(),
+  }),
+  tokens: z.object({
+    used: z.number().int().nonnegative(),
+    max: z.number().int().nonnegative(),
+  }),
+  wallclock: z.object({
+    started_at: z.string().datetime(),
+    max_seconds: z.number().int().nonnegative(),
+  }),
+});
+
+export const GoalStateSchema = z.object({
+  schema_version: z.literal(1),
+  goal_id: z.string().min(1),
+  lifecycle: LifecycleSchema,
+  cursor: z.string(),
+  budget: TripleBudgetSchema,
+  session_id: z.string(),
+  started_at: z.string().datetime().nullable(),
+  paused_at: z.string().datetime().nullable(),
+  ended_at: z.string().datetime().nullable(),
+  ended_reason: z.string().nullable(),
+  history: z.array(HistoryEntrySchema),
+});
