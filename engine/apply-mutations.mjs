@@ -104,5 +104,31 @@ export function applyMutations(treeIn, stateIn, tags, ts) {
     }
   }
 
+  // Achieved: cursor unchanged AND no next pending AND cursor task is achieved
+  if (state.lifecycle === 'pursuing') {
+    const cur = findNodeById(tree, state.cursor);
+    if (cur && cur.status === 'achieved' && nextPendingTaskAfter(tree, cur.id) === null) {
+      state.lifecycle = 'achieved';
+      state.ended_at = ts;
+      state.ended_reason = 'all tasks achieved';
+      history.push({ ts, iteration: state.budget.iterations.used, event: 'achieved', node_id: null, payload: {} });
+    }
+  }
+
+  // Unmet: 3 consecutive node-blocked events for the same node
+  if (state.lifecycle === 'pursuing') {
+    const blockedRun = [...state.history.slice(-2), ...history.filter(h => h.event === 'node-blocked')]
+      .filter(h => h.event === 'node-blocked');
+    if (blockedRun.length >= 3 && blockedRun.slice(-3).every(h => h.node_id === blockedRun[blockedRun.length - 1].node_id)) {
+      state.lifecycle = 'unmet';
+      state.ended_at = ts;
+      state.ended_reason = '3 consecutive blocks on the same node';
+      history.push({ ts, iteration: state.budget.iterations.used, event: 'unmet', node_id: blockedRun[blockedRun.length - 1].node_id, payload: {} });
+    }
+  }
+
+  // Append accumulated history to state
+  state.history.push(...history);
+
   return { tree, state, history };
 }

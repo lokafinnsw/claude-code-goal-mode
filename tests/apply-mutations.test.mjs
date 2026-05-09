@@ -160,3 +160,50 @@ describe('applyMutations review flow', () => {
     expect(t2.root.children[0].status).toBe('blocked');
   });
 });
+
+describe('applyMutations terminal lifecycle', () => {
+  function twoTaskTree() {
+    return {
+      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      root: {
+        id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
+        review: [], validate: null, work_front: null, status: 'pursuing',
+        evidence: [], blocker_reason: null, review_attempts: 0, notes: [],
+        children: [
+          { id: 's.t1', type: 'task', title: 't1', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pursuing', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
+          { id: 's.t2', type: 'task', title: 't2', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pending', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
+        ],
+      },
+    };
+  }
+
+  it('marks lifecycle achieved when DFS exhausts pending tasks', () => {
+    const tree = twoTaskTree();
+    tree.root.children[0].status = 'achieved';
+    tree.root.children[1].acceptance_criteria = ['c0'];
+    const state = mkState('s.t2');
+    const tags = [
+      { kind: 'evidence', file: 'x', line: null, criterion: 0, note: 'n', command: null, exit_code: null },
+      { kind: 'task-status', value: 'achieved' },
+    ];
+    const { state: s2 } = applyMutations(tree, state, tags, '2026-05-09T03:00:00.000Z');
+    expect(s2.lifecycle).toBe('achieved');
+  });
+
+  it('marks lifecycle unmet when 3 consecutive blocked iterations on same node', () => {
+    const tree = twoTaskTree();
+    tree.root.children[0].status = 'blocked';
+    tree.root.children[0].review_attempts = 3;
+    const state = mkState('s.t1');
+    state.history = [
+      { ts: 't', iteration: 1, event: 'node-blocked', node_id: 's.t1', payload: {} },
+      { ts: 't', iteration: 2, event: 'node-blocked', node_id: 's.t1', payload: {} },
+    ];
+    const tags = [
+      { kind: 'task-status', value: 'blocked' },
+      { kind: 'blocker', reason: 'still stuck' },
+    ];
+    const { state: s2 } = applyMutations(tree, state, tags, '2026-05-09T03:00:00.000Z');
+    expect(s2.lifecycle).toBe('unmet');
+  });
+});
