@@ -1,3 +1,78 @@
+/**
+ * Pure mutation engine for the goal-mode plan-tree.
+ *
+ * Function: applyMutations(treeIn, stateIn, tags, ts) → { tree, state, history }
+ *
+ * Inputs and outputs:
+ *   - treeIn:  the current plan-tree object (zod GoalTreeSchema-shaped).
+ *   - stateIn: the current run-state object (zod GoalStateSchema-shaped).
+ *   - tags:    typed tag array as emitted by `parseTags()` from `parse-tags.mjs`.
+ *   - ts:      ISO-8601 timestamp string used for new history entries.
+ *   - returns: a NEW tree (deep-cloned via structuredClone), a NEW state (also
+ *              deep-cloned, with `history` already extended), and the array of
+ *              new history entries appended in this call. Original inputs are
+ *              never mutated.
+ *
+ * Branch ordering and precedence (single linear pass through the tag stream):
+ *   1. Evidence loop: every `evidence` tag pushes onto cursorNode.evidence and
+ *      emits an `evidence-added` history entry.
+ *   2. Task-status (single, first-wins via tags.find): handles 'achieved',
+ *      'blocked', 'pursuing'. 'achieved' gates on allCriteriaCovered.
+ *   3. Review-request: if cursorNode is still pursuing and criteria covered,
+ *      transitions to review-pending.
+ *   4. Audit-verdict batch: only consumed when status === 'review-pending'.
+ *      Strict NOGO-wins: if any verdict is NOGO/REVISE, cursorNode returns to
+ *      pursuing and review_attempts increments; on review_attempts >= 3 the
+ *      node is auto-blocked. Otherwise, all-GO requires every required
+ *      reviewer to have at least one verdict AND none of their verdicts to be
+ *      non-GO; if so, the node achieves and the cursor advances.
+ *   5. Terminal-achieved lifecycle: fires when the cursor's task is achieved
+ *      and there is no pending successor (nextPendingTaskAfter === null).
+ *      Note: cursor advancement (steps 2/4) advances the cursor to the
+ *      successor; if no successor exists, cursor stays on the just-achieved
+ *      node, which is exactly what makes this check fire.
+ *   6. Terminal-unmet lifecycle: fires when the cursor's node is blocked AND
+ *      its review_attempts has reached 3. Block-counter is incremented in two
+ *      places: the audit-verdict NOGO branch and the task-status:blocked
+ *      branch. Both feed the same counter so this check covers either path.
+ *
+ * Block-counter contract:
+ *   cursorNode.review_attempts is incremented under exactly two conditions:
+ *     - An audit-verdict batch contains at least one NOGO or REVISE.
+ *     - A task-status tag with value 'blocked' is processed.
+ *   Both increments are by 1 per applyMutations call (so 3 NOGOs in one batch
+ *   bumps the counter by 1, not 3 — matching "3 consecutive iterations" not
+ *   "3 individual NOGO verdicts").
+ *
+ * Coverage check (allCriteriaCovered):
+ *   A criterion is considered covered when at least one evidence entry has a
+ *   criterion_index in [0, acceptance_criteria.length). Out-of-range indices
+ *   (negative, or >= length) are silently dropped from coverage but the
+ *   evidence record itself is still pushed onto cursorNode.evidence (parsing
+ *   succeeded; we just don't credit it). Empty acceptance_criteria []
+ *   trivially evaluates to "all covered" — sprint/epic nodes with no criteria
+ *   advance immediately on a 'task-status:achieved' tag.
+ *
+ * Cursor advancement note:
+ *   cursorNode is captured at function entry via findNodeById(tree, state.cursor)
+ *   and held by reference for the rest of the call. Once cursor advances to a
+ *   successor (steps 2/4), evidence and other tags emitted later in the SAME
+ *   tag stream still land on the original cursorNode. Parse-tags emits all
+ *   evidence tags before any task-status tag in canonical agent output, so
+ *   this ordering is the contract; agents emitting tags out-of-canonical-order
+ *   need to be aware their late evidence lands on the closing-out task.
+ *
+ * History semantics:
+ *   - history is built up locally during the call and appended to state.history
+ *     at the end.
+ *   - The function ALSO returns history as a separate field for callers that
+ *     want the new entries without slicing state.history.
+ *   - Both views are equivalent (state.history.slice(-history.length) ===
+ *     history when the input state.history is preserved).
+ *
+ * Pure: no I/O, no globals, no Math.random. Inputs are deep-cloned via
+ * structuredClone; the original objects are never mutated.
+ */
 import { findNodeById, nextPendingTaskAfter } from './traversal.mjs';
 
 function allCriteriaCovered(node) {
@@ -63,6 +138,7 @@ export function applyMutations(treeIn, stateIn, tags, ts) {
       }
     } else if (statusTag.value === 'blocked') {
       cursorNode.status = 'blocked';
+      cursorNode.review_attempts += 1;  // I2: same counter feeds I1's unmet check
       const blockerTag = tags.find(t => t.kind === 'blocker');
       if (blockerTag) cursorNode.blocker_reason = blockerTag.reason;
       history.push({ ts, iteration: state.budget.iterations.used, event: 'node-blocked', node_id: cursorNode.id, payload: { reason: cursorNode.blocker_reason } });
@@ -86,14 +162,14 @@ export function applyMutations(treeIn, stateIn, tags, ts) {
         payload: { agent: v.agent, status: v.status, text: v.text },
       });
     }
-    const allGo = cursorNode.review.every(agent => verdicts.find(v => v.agent === agent && v.status === 'GO'));
+    // Strict: any NOGO/REVISE blocks advancement, even mixed with GOs in the same batch.
     const anyNo = verdicts.some(v => v.status === 'NOGO' || v.status === 'REVISE');
-    if (allGo) {
-      cursorNode.status = 'achieved';
-      history.push({ ts, iteration: state.budget.iterations.used, event: 'cursor-advanced', node_id: cursorNode.id, payload: { from: 'review-go' } });
-      const nextTask = nextPendingTaskAfter(tree, cursorNode.id);
-      state.cursor = nextTask ? nextTask.id : cursorNode.id;
-    } else if (anyNo) {
+    // allGo: every required reviewer has at least one verdict AND none of their verdicts are non-GO.
+    const allGo = !anyNo && cursorNode.review.every(agent => {
+      const fromAgent = verdicts.filter(v => v.agent === agent);
+      return fromAgent.length > 0 && fromAgent.every(v => v.status === 'GO');
+    });
+    if (anyNo) {
       cursorNode.status = 'pursuing';
       cursorNode.review_attempts += 1;
       if (cursorNode.review_attempts >= 3) {
@@ -101,6 +177,11 @@ export function applyMutations(treeIn, stateIn, tags, ts) {
         cursorNode.blocker_reason = `3 consecutive review cycles ended in NOGO/REVISE`;
         history.push({ ts, iteration: state.budget.iterations.used, event: 'node-blocked', node_id: cursorNode.id, payload: { reason: cursorNode.blocker_reason } });
       }
+    } else if (allGo) {
+      cursorNode.status = 'achieved';
+      history.push({ ts, iteration: state.budget.iterations.used, event: 'cursor-advanced', node_id: cursorNode.id, payload: { from: 'review-go' } });
+      const nextTask = nextPendingTaskAfter(tree, cursorNode.id);
+      state.cursor = nextTask ? nextTask.id : cursorNode.id;
     }
   }
 
@@ -115,15 +196,17 @@ export function applyMutations(treeIn, stateIn, tags, ts) {
     }
   }
 
-  // Unmet: 3 consecutive node-blocked events for the same node
+  // Unmet: any node has accumulated 3 review_attempts AND is currently blocked.
+  // review_attempts is the authoritative per-node block counter — incremented
+  // in both the audit-verdict NOGO/REVISE branch and the task-status:blocked
+  // branch (see I2 fix).
   if (state.lifecycle === 'pursuing') {
-    const blockedRun = [...state.history.slice(-2), ...history.filter(h => h.event === 'node-blocked')]
-      .filter(h => h.event === 'node-blocked');
-    if (blockedRun.length >= 3 && blockedRun.slice(-3).every(h => h.node_id === blockedRun[blockedRun.length - 1].node_id)) {
+    const cur = findNodeById(tree, state.cursor);
+    if (cur && cur.status === 'blocked' && cur.review_attempts >= 3) {
       state.lifecycle = 'unmet';
       state.ended_at = ts;
       state.ended_reason = '3 consecutive blocks on the same node';
-      history.push({ ts, iteration: state.budget.iterations.used, event: 'unmet', node_id: blockedRun[blockedRun.length - 1].node_id, payload: {} });
+      history.push({ ts, iteration: state.budget.iterations.used, event: 'unmet', node_id: cur.id, payload: {} });
     }
   }
 
