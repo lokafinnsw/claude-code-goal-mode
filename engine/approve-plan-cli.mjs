@@ -14,6 +14,10 @@
  *      transition existing state.lifecycle to 'approved'.
  *      Append 'plan-approved' history event.
  *   6. Exit 0 on success, 1 on validation failure.
+ *
+ * C-1 lifecycle gate: refuses to transition if state.lifecycle is not in
+ * {draft, approved}. This protects mid-run state from being clobbered if
+ * /goal:approve-plan is invoked accidentally during pursuit.
  */
 
 import fs from 'node:fs';
@@ -50,28 +54,47 @@ function countTasks(node) {
   return n;
 }
 
-// CLI entry — guarded so tests can `import` this file and call discoverReviewers
-// in isolation without triggering the side effects.
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const tree = loadTree(process.cwd());
+/**
+ * Pure-ish core of /goal:approve-plan: reads tree.json from projectRoot,
+ * runs validatePlan + reviewer discovery, on success stamps tree.approved_at
+ * and transitions state.lifecycle (draft|approved → approved). Returns
+ * { ok, errors, warnings, taskCount? }.
+ *
+ * Lifecycle gate (C-1 fix):
+ *   - state missing → write fresh state.json with lifecycle='approved'.
+ *   - state.lifecycle === 'draft' → transition to 'approved'.
+ *   - state.lifecycle === 'approved' → idempotent re-stamp (allow user to
+ *     edit + re-approve before /goal:start).
+ *   - any other lifecycle → REFUSE with error; preserves the user's run.
+ */
+export function approvePlan(projectRoot, opts = {}) {
+  const tree = loadTree(projectRoot);
   if (!tree) {
-    console.error('no tree.json; run /goal:plan first');
-    process.exit(1);
+    return { ok: false, errors: ['no tree.json; run /goal:plan first'], warnings: [] };
   }
-  const result = validatePlan(tree, { availableReviewers: discoverReviewers() });
-  if (result.warnings.length) {
-    console.log('⚠️  warnings:');
-    for (const w of result.warnings) console.log('  - ' + w);
-  }
+  const availableReviewers = opts.availableReviewers ?? discoverReviewers();
+  const result = validatePlan(tree, { availableReviewers });
   if (!result.ok) {
-    console.error('❌ validation failed:');
-    for (const e of result.errors) console.error('  - ' + e);
-    process.exit(1);
+    return { ok: false, errors: result.errors, warnings: result.warnings };
   }
-  tree.approved_at = new Date().toISOString();
-  saveTree(process.cwd(), tree);
 
-  let state = loadState(process.cwd());
+  // C-1 lifecycle gate.
+  const existingState = loadState(projectRoot);
+  if (existingState && existingState.lifecycle !== 'draft' && existingState.lifecycle !== 'approved') {
+    return {
+      ok: false,
+      errors: [
+        `refusing to approve: state.lifecycle=${existingState.lifecycle}; ` +
+        `/goal:approve-plan only valid from draft. Run /goal:clear --archive first if you want to re-approve.`,
+      ],
+      warnings: result.warnings,
+    };
+  }
+
+  tree.approved_at = new Date().toISOString();
+  saveTree(projectRoot, tree);
+
+  let state = existingState;
   if (!state) {
     state = {
       schema_version: 1,
@@ -100,6 +123,25 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     node_id: null,
     payload: {},
   });
-  saveState(process.cwd(), state);
-  console.log(`✅ plan approved (${countTasks(tree.root)} tasks)`);
+  saveState(projectRoot, state);
+
+  return { ok: true, errors: [], warnings: result.warnings, taskCount: countTasks(tree.root) };
+}
+
+// CLI entry — guarded so tests can `import` this file and call the exported
+// helpers in isolation without triggering the side effects.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const result = approvePlan(process.cwd());
+  if (result.warnings.length) {
+    console.log('⚠️  warnings:');
+    for (const w of result.warnings) console.log('  - ' + w);
+  }
+  if (!result.ok) {
+    console.error('❌ ' + (result.errors.length === 1 ? result.errors[0] : 'validation failed:'));
+    if (result.errors.length > 1) {
+      for (const e of result.errors) console.error('  - ' + e);
+    }
+    process.exit(1);
+  }
+  console.log(`✅ plan approved (${result.taskCount} tasks)`);
 }

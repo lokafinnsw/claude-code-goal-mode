@@ -25,11 +25,13 @@
  *      - title / goal / acceptance_criteria entries containing
  *        placeholder tokens (TBD / TODO / FIXME / XXX / ??? — case
  *        insensitive, word-bounded for first 4).
- *      - tasks (type === 'task') with empty acceptance_criteria[] —
- *        rejected as the engine cannot produce an "achieved" verdict
- *        for a zero-criteria task.
  *      - review[] entries not in opts.availableReviewers (when
  *        provided) — emit a WARNING per missing reviewer.
+ *
+ *      Note: the empty-acceptance_criteria-on-task constraint is
+ *      enforced at the schema layer (GoalNodeSchema.refine in
+ *      state.mjs) and therefore short-circuits via the schema fast-fail
+ *      above. No business-rule check is needed here.
  *
  * Pure: no I/O, no globals.
  */
@@ -66,9 +68,9 @@ export function validatePlan(tree, opts = {}) {
         errors.push(`node ${node.id}: criterion contains placeholder (${c})`);
       }
     }
-    if (node.type === 'task' && node.acceptance_criteria.length === 0) {
-      errors.push(`node ${node.id}: task has no acceptance_criteria`);
-    }
+    // Note: task nodes with empty acceptance_criteria are caught by
+    // GoalNodeSchema's .refine() at the schema layer above, which fast-fails
+    // before this business-rule pass runs. No duplicate check needed.
     if (opts.availableReviewers) {
       for (const r of node.review) {
         if (!opts.availableReviewers.has(r)) {
