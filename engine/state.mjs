@@ -139,14 +139,21 @@ function atomicWrite(target, content) {
 }
 
 function readWithBackup(target, parser) {
-  if (!fs.existsSync(target)) return null;
-  const raw = fs.readFileSync(target, 'utf8');
+  let raw;
+  try {
+    raw = fs.readFileSync(target, 'utf8');
+  } catch (err) {
+    // ENOENT = file missing (normal, no goal active). Other errors (EACCES, EPERM, EISDIR):
+    // no backup to make since we couldn't read; just signal "no usable state".
+    return null;
+  }
   try {
     const parsed = JSON.parse(raw);
     return parser.parse(parsed);
   } catch (err) {
+    // Read succeeded but data is corrupt or schema-invalid: preserve as .broken-<ts>.
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    fs.copyFileSync(target, `${target}.broken-${ts}`);
+    try { fs.copyFileSync(target, `${target}.broken-${ts}`); } catch (_) {}
     return null;
   }
 }

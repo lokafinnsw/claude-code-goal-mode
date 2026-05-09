@@ -238,3 +238,70 @@ describe('atomic save/load', () => {
     expect(fs.existsSync(target + '.tmp')).toBe(false);
   });
 });
+
+describe('atomic save/load — tree', () => {
+  function makeMinimalTree() {
+    return {
+      schema_version: 1,
+      goal_id: 'tree-test',
+      mission: 'tree round-trip mission',
+      created_at: '2026-05-09T00:00:00.000Z',
+      approved_at: null,
+      root: {
+        id: 'sprint-1',
+        type: 'sprint',
+        title: 'r',
+        goal: 'g',
+        acceptance_criteria: [],
+        review: [],
+        validate: null,
+        work_front: null,
+        status: 'pending',
+        evidence: [],
+        blocker_reason: null,
+        review_attempts: 0,
+        notes: [],
+        children: [
+          {
+            id: 'sprint-1.task-1',
+            type: 'task',
+            title: 'leaf',
+            goal: 'g',
+            acceptance_criteria: ['c'],
+            review: [],
+            validate: null,
+            work_front: null,
+            status: 'pending',
+            evidence: [],
+            blocker_reason: null,
+            review_attempts: 0,
+            notes: [],
+            children: [],
+          },
+        ],
+      },
+    };
+  }
+
+  it('saveTree then loadTree round-trips', () => {
+    const dir = tmpdir();
+    const tree = makeMinimalTree();
+    saveTree(dir, tree);
+    expect(loadTree(dir)).toEqual(tree);
+  });
+
+  it('loadTree returns null when file missing', () => {
+    const dir = tmpdir();
+    expect(loadTree(dir)).toBeNull();
+  });
+
+  it('loadTree returns null on invalid JSON and writes .broken backup', () => {
+    const dir = tmpdir();
+    const target = path.join(dir, '.claude/goals/active/tree.json');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '{not valid json');
+    expect(loadTree(dir)).toBeNull();
+    const files = fs.readdirSync(path.dirname(target));
+    expect(files.some(f => f.startsWith('tree.json.broken-'))).toBe(true);
+  });
+});
