@@ -35,7 +35,9 @@
  *        - 'achieved': render prompts/final-summary.md.
  *        - 'unmet':    render prompts/unmet-summary.md (closing summary
  *                      explaining the block).
- *        - other terminal (paused, cancelled, budget-limited): return.
+ *        - other terminal (paused, budget-limited): return.
+ *          (achieved/unmet handled above; draft/approved are pre-start
+ *          states that don't fire Stop hooks.)
  *   6. Else (still pursuing): pick continuation template based on cursor
  *      status — pursuing → continuation.md, review-pending →
  *      continuation-review.md, blocked → continuation-blocked.md.
@@ -49,6 +51,9 @@
  * Composition:
  *   - state.mjs: loadState, saveState, loadTree, saveTree.
  *   - transcript.mjs: readLastAssistantText.
+ *   - stripCodeRegions(text) — strip ``` fenced blocks and ` inline spans
+ *     before parsing, so example tags in prose-rendered prompts don't
+ *     trigger spurious mutations.
  *   - parse-tags.mjs: parseTags.
  *   - apply-mutations.mjs: applyMutations.
  *   - continuation.mjs: buildContext, render.
@@ -78,6 +83,24 @@ function readPrompt(name) {
   return fs.readFileSync(path.join(PLUGIN_ROOT, 'prompts', name), 'utf8');
 }
 
+/**
+ * Strip markdown code regions before tag parsing. Fenced blocks (```...```)
+ * and inline backtick spans (`...`) contain illustrative example tags from
+ * the continuation prompts (e.g., the {{task-status}} examples in
+ * prompts/continuation.md:28). Agents paraphrase those prompts in their
+ * responses; without stripping, the parser would extract the examples as
+ * real tags and trigger spurious mutations.
+ *
+ * The "canonical" tag-emission convention is: tags appear in the body of
+ * the agent's prose, NOT inside backticks/fences. This matches the
+ * convention the prompts themselves use.
+ */
+function stripCodeRegions(text) {
+  return text
+    .replace(/```[\s\S]*?```/g, '')   // fenced blocks (multiline)
+    .replace(/`[^`\n]+`/g, '');       // inline spans (single line)
+}
+
 export async function runStopHook({ stdin, projectRoot }) {
   try {
     const state = loadState(projectRoot);
@@ -91,12 +114,19 @@ export async function runStopHook({ stdin, projectRoot }) {
     state.budget.iterations.used += 1;
 
     const lastText = readLastAssistantText(stdin.transcript_path);
-    const tags = parseTags(lastText);
+    const scopedText = stripCodeRegions(lastText);
+    const tags = parseTags(scopedText);
     const ts = new Date().toISOString();
     const { tree: newTree, state: newState } = applyMutations(tree, state, tags, ts);
 
     saveTree(projectRoot, newTree);
     saveState(projectRoot, newState);
+
+    // Append iteration digest BEFORE lifecycle branching, so terminal turns
+    // (achieved/unmet) are also logged. Cursor may not exist post-mutation
+    // (e.g., advanced past the last node) — appendNotesDigest handles that.
+    const postCursor = findNodeById(newTree, newState.cursor);
+    appendNotesDigest(projectRoot, newState, postCursor, ts);
 
     if (newState.lifecycle === 'achieved') {
       const tpl = readPrompt('final-summary.md');
@@ -117,11 +147,20 @@ export async function runStopHook({ stdin, projectRoot }) {
     }
 
     const cursor = findNodeById(newTree, newState.cursor);
+    if (!cursor) {
+      console.error(`[goal-mode] cursor ${newState.cursor} not found in tree; skipping continuation render`);
+      return { exit: 0, stdout: null, error: `cursor ${newState.cursor} not found in tree` };
+    }
+
     let templateName = 'continuation.md';
     if (cursor.status === 'review-pending') templateName = 'continuation-review.md';
     else if (cursor.status === 'blocked') templateName = 'continuation-blocked.md';
 
     const ctx = buildContext(newTree, newState, newState.cursor);
+    if (!ctx) {
+      console.error(`[goal-mode] buildContext returned null for cursor ${newState.cursor}`);
+      return { exit: 0, stdout: null, error: `buildContext returned null` };
+    }
     if (templateName === 'continuation-review.md') {
       ctx.audit_instructions = render(readPrompt('audit-instructions.md'), ctx);
     }
@@ -135,7 +174,6 @@ export async function runStopHook({ stdin, projectRoot }) {
     }
 
     const rendered = render(readPrompt(templateName), ctx);
-    appendNotesDigest(projectRoot, newState, cursor, ts);
 
     return {
       exit: 0,
@@ -146,6 +184,7 @@ export async function runStopHook({ stdin, projectRoot }) {
       },
     };
   } catch (err) {
+    console.error(`[goal-mode] runStopHook caught error: ${err.message}`, err.stack);
     return { exit: 0, stdout: null, error: String(err) };
   }
 }
@@ -199,6 +238,10 @@ function buildUnmetContext(tree, state, ts) {
 
 function appendNotesDigest(projectRoot, state, cursor, ts) {
   fs.mkdirSync(activeDir(projectRoot), { recursive: true });
-  const line = `- ${ts} iter ${state.budget.iterations.used}: cursor ${cursor.id} status=${cursor.status} evidence=${cursor.evidence.length}\n`;
+  const cursorInfo = cursor
+    ? `cursor ${cursor.id} status=${cursor.status} evidence=${cursor.evidence.length}`
+    : `cursor ${state.cursor} (not found in tree)`;
+  const lifecycleInfo = state.lifecycle === 'pursuing' ? '' : ` lifecycle=${state.lifecycle}`;
+  const line = `- ${ts} iter ${state.budget.iterations.used}: ${cursorInfo}${lifecycleInfo}\n`;
   fs.appendFileSync(notesPath(projectRoot), line);
 }

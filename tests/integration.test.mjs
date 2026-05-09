@@ -141,3 +141,96 @@ describe('runStopHook integration', () => {
     expect(result.stdout.reason).toContain('art-x');
   });
 });
+
+describe('runStopHook hardening fix-ups', () => {
+  // I-1: code-fenced and inline-backtick example tags must be ignored
+  it('does not extract tags from fenced code blocks (I-1)', async () => {
+    const transcriptObj = {
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: 'Here is an example of how to emit a status:\n\n```xml\n<task-status>achieved</task-status>\n<evidence file="x" criterion="0" note="example" />\n```\n\nI am still working on it; nothing is achieved yet.',
+        }],
+      },
+    };
+    const { root, tPath } = setupProject(minimalTree(), pursuingState(), JSON.stringify(transcriptObj) + '\n');
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    // The agent should still be in pursuing — example tags must NOT have been extracted.
+    expect(result.stdout.systemMessage).toMatch(/🎯/);
+    expect(result.stdout.reason).toContain('Goal continuation');
+    expect(result.stdout.reason).not.toContain('Goal achieved');
+  });
+
+  it('does not extract tags from inline backtick spans (I-1)', async () => {
+    const transcriptObj = {
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: 'Per the prompt, when done I should emit `<task-status>achieved</task-status>`. I am still working.',
+        }],
+      },
+    };
+    const { root, tPath } = setupProject(minimalTree(), pursuingState(), JSON.stringify(transcriptObj) + '\n');
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.stdout.systemMessage).toMatch(/🎯/);
+    expect(result.stdout.reason).not.toContain('Goal achieved');
+  });
+
+  it('STILL extracts tags that appear in canonical prose (I-1 regression lock)', async () => {
+    const transcriptObj = {
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: 'I implemented the feature and tested it.\n\n<evidence file="x" criterion="0" note="all done" />\n<task-status>achieved</task-status>',
+        }],
+      },
+    };
+    const { root, tPath } = setupProject(minimalTree(), pursuingState(), JSON.stringify(transcriptObj) + '\n');
+    const result = await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    expect(result.stdout.systemMessage).toBe('✅ goal achieved');
+  });
+
+  // I-4: notes-digest is written on terminal lifecycle iterations
+  it('writes notes-digest entry on achieved iteration (I-4)', async () => {
+    const transcriptObj = {
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: '<evidence file="x" criterion="0" note="done" />\n<task-status>achieved</task-status>',
+        }],
+      },
+    };
+    const { root, tPath } = setupProject(minimalTree(), pursuingState(), JSON.stringify(transcriptObj) + '\n');
+    await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    const notes = fs.readFileSync(path.join(root, '.claude', 'goals', 'active', 'notes.md'), 'utf8');
+    expect(notes).toContain('lifecycle=achieved');
+  });
+
+  it('writes notes-digest entry on unmet iteration (I-4)', async () => {
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.history = [
+      { ts: '2026-05-09T01:00:00.000Z', iteration: 1, event: 'node-blocked', node_id: 't', payload: {} },
+      { ts: '2026-05-09T02:00:00.000Z', iteration: 2, event: 'node-blocked', node_id: 't', payload: {} },
+    ];
+    tree.root.review_attempts = 2;
+    state.budget.iterations.used = 2;
+    const transcriptObj = {
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: '<task-status>blocked</task-status>\n<blocker>still cannot solve</blocker>',
+        }],
+      },
+    };
+    const { root, tPath } = setupProject(tree, state, JSON.stringify(transcriptObj) + '\n');
+    await runStopHook({ stdin: { session_id: 'sess-1', transcript_path: tPath }, projectRoot: root });
+    const notes = fs.readFileSync(path.join(root, '.claude', 'goals', 'active', 'notes.md'), 'utf8');
+    expect(notes).toContain('lifecycle=unmet');
+  });
+});
