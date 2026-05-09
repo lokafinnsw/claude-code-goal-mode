@@ -305,3 +305,24 @@ describe('atomic save/load — tree', () => {
     expect(files.some(f => f.startsWith('tree.json.broken-'))).toBe(true);
   });
 });
+
+describe('readWithBackup forensic-copy collision handling (Bug 2)', () => {
+  it('preserves multiple .broken-<ts>-<seq> files when crashes happen in tight sequence', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'broken-collision-'));
+    fs.mkdirSync(path.join(root, '.claude/goals/active'), { recursive: true });
+    const statePath = path.join(root, '.claude/goals/active/state.json');
+
+    // 5 corrupt-write/read cycles in tight loop. Each load should preserve
+    // the corrupt copy under a unique .broken-* name.
+    for (let i = 0; i < 5; i++) {
+      fs.writeFileSync(statePath, `not valid json #${i}`);
+      const result = loadState(root);
+      expect(result).toBeNull();  // load fails on corrupt JSON
+    }
+
+    // Inspect the active dir for .broken-* files. Expect 5.
+    const files = fs.readdirSync(path.join(root, '.claude/goals/active'));
+    const brokenFiles = files.filter(f => f.includes('.broken-'));
+    expect(brokenFiles.length).toBe(5);
+  });
+});

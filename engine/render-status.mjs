@@ -14,6 +14,8 @@
  * buildContext, with the same 0-clamp on clock skew.
  */
 
+import { wallclockMinutes } from './wallclock.mjs';
+
 const ICON = {
   pending: '⬜',
   pursuing: '🟡',
@@ -47,8 +49,7 @@ export function renderStatus(tree, state, now = Date.now()) {
   lines.push('## Budget');
   lines.push(`- Iterations: ${bar(state.budget.iterations.used, state.budget.iterations.max)}`);
   lines.push(`- Tokens: ${bar(state.budget.tokens.used, state.budget.tokens.max)}`);
-  const wallStart = new Date(state.budget.wallclock.started_at).getTime();
-  const elapsed = Math.max(0, Math.floor((now - wallStart) / 60000));
+  const elapsed = wallclockMinutes(state, now);
   const maxMin = Math.floor(state.budget.wallclock.max_seconds / 60);
   lines.push(`- Wall-clock: ${bar(elapsed, maxMin)} minutes`);
   lines.push('');

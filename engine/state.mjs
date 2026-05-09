@@ -151,9 +151,18 @@ function readWithBackup(target, parser) {
     const parsed = JSON.parse(raw);
     return parser.parse(parsed);
   } catch (err) {
-    // Read succeeded but data is corrupt or schema-invalid: preserve as .broken-<ts>.
+    // Read succeeded but data is corrupt or schema-invalid: preserve as
+    // .broken-<ts>-<seq>. The sequence suffix prevents collisions when
+    // multiple corrupt loads happen within the same millisecond (tight
+    // crash-loops) — without it copyFileSync silently overwrites and we
+    // lose forensic data.
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    try { fs.copyFileSync(target, `${target}.broken-${ts}`); } catch (_) {}
+    let seq = 0;
+    let dst;
+    do {
+      dst = `${target}.broken-${ts}-${seq++}`;
+    } while (fs.existsSync(dst));
+    try { fs.copyFileSync(target, dst); } catch (_) {}
     return null;
   }
 }

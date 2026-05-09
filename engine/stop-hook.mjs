@@ -75,12 +75,10 @@ import { applyMutations } from './apply-mutations.mjs';
 import { findNodeById } from './traversal.mjs';
 import { buildContext, render } from './continuation.mjs';
 import { notesPath, activeDir } from './paths.mjs';
+import { wallclockMinutes } from './wallclock.mjs';
 
-const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT
-  ?? path.resolve(new URL('..', import.meta.url).pathname);
-
-function readPrompt(name) {
-  return fs.readFileSync(path.join(PLUGIN_ROOT, 'prompts', name), 'utf8');
+function readPrompt(name, pluginRoot) {
+  return fs.readFileSync(path.join(pluginRoot, 'prompts', name), 'utf8');
 }
 
 /**
@@ -103,6 +101,13 @@ function stripCodeRegions(text) {
 
 export async function runStopHook({ stdin, projectRoot }) {
   try {
+    // PLUGIN_ROOT is resolved at runtime (not module-load time) so tests can
+    // override CLAUDE_PLUGIN_ROOT after importing this module. In production,
+    // Claude Code spawns a fresh CLI per Stop hook so module-level capture
+    // would also work — but runtime resolution is strictly more general.
+    const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT
+      ?? path.resolve(new URL('..', import.meta.url).pathname);
+
     const state = loadState(projectRoot);
     if (!state) return { exit: 0, stdout: null };
     if (state.session_id !== stdin.session_id) return { exit: 0, stdout: null };
@@ -129,14 +134,14 @@ export async function runStopHook({ stdin, projectRoot }) {
     appendNotesDigest(projectRoot, newState, postCursor, ts);
 
     if (newState.lifecycle === 'achieved') {
-      const tpl = readPrompt('final-summary.md');
+      const tpl = readPrompt('final-summary.md', PLUGIN_ROOT);
       const ctx = buildSummaryContext(newTree, newState, ts);
       const reason = render(tpl, ctx);
       return { exit: 0, stdout: { decision: 'block', reason, systemMessage: '✅ goal achieved' } };
     }
 
     if (newState.lifecycle === 'unmet') {
-      const tpl = readPrompt('unmet-summary.md');
+      const tpl = readPrompt('unmet-summary.md', PLUGIN_ROOT);
       const ctx = buildUnmetContext(newTree, newState, ts);
       const reason = render(tpl, ctx);
       return { exit: 0, stdout: { decision: 'block', reason, systemMessage: '🔴 goal unmet' } };
@@ -162,7 +167,7 @@ export async function runStopHook({ stdin, projectRoot }) {
       return { exit: 0, stdout: null, error: `buildContext returned null` };
     }
     if (templateName === 'continuation-review.md') {
-      ctx.audit_instructions = render(readPrompt('audit-instructions.md'), ctx);
+      ctx.audit_instructions = render(readPrompt('audit-instructions.md', PLUGIN_ROOT), ctx);
     }
     if (templateName === 'continuation-blocked.md') {
       const uncovered = ctx.criteria.filter(c => c.covered_marker === ' ');
@@ -173,7 +178,7 @@ export async function runStopHook({ stdin, projectRoot }) {
         .map(h => ({ agent: h.payload.agent, status: h.payload.status, text: h.payload.text }));
     }
 
-    const rendered = render(readPrompt(templateName), ctx);
+    const rendered = render(readPrompt(templateName, PLUGIN_ROOT), ctx);
 
     return {
       exit: 0,
@@ -196,11 +201,10 @@ function buildSummaryContext(tree, state, ts) {
     return acc;
   }
   const c = counts(tree.root);
-  const wallStart = new Date(state.budget.wallclock.started_at).getTime();
   return {
     iterations_used: state.budget.iterations.used,
     tokens_used: state.budget.tokens.used,
-    wallclock_minutes: Math.max(0, Math.floor((Date.now() - wallStart) / 60000)),
+    wallclock_minutes: wallclockMinutes(state),
     sprint_count: c.sprint,
     epic_count: c.epic,
     task_count: c.task,
@@ -221,7 +225,6 @@ function buildUnmetContext(tree, state, ts) {
     return acc;
   }
   const c = counts(tree.root);
-  const wallStart = new Date(state.budget.wallclock.started_at).getTime();
   return {
     blocked_task_id: cursor?.id ?? state.cursor,
     blocked_task_title: cursor?.title ?? '(unknown)',
@@ -229,7 +232,7 @@ function buildUnmetContext(tree, state, ts) {
     review_attempts: cursor?.review_attempts ?? 0,
     iterations_used: state.budget.iterations.used,
     tokens_used: state.budget.tokens.used,
-    wallclock_minutes: Math.max(0, Math.floor((Date.now() - wallStart) / 60000)),
+    wallclock_minutes: wallclockMinutes(state),
     tasks_achieved: c.achieved,
     tasks_total: c.total,
     ts,

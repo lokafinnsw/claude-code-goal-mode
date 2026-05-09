@@ -67,6 +67,7 @@
  */
 
 import { findNodeById } from './traversal.mjs';
+import { wallclockMinutes } from './wallclock.mjs';
 
 export class TemplateRenderError extends Error {
   constructor(message, details) {
@@ -277,7 +278,6 @@ export function buildContext(tree, state, cursorId, now = Date.now()) {
   const criteria = task.acceptance_criteria.map((text, index) => ({
     index, text, covered_marker: coveredCriteria.has(index) ? 'x' : ' ',
   }));
-  const wallStart = new Date(state.budget.wallclock.started_at).getTime();
   return {
     iteration: state.budget.iterations.used,
     iterations_max: state.budget.iterations.max,
@@ -297,7 +297,7 @@ export function buildContext(tree, state, cursorId, now = Date.now()) {
     review_attempts: task.review_attempts,
     tokens_used: state.budget.tokens.used,
     tokens_max: state.budget.tokens.max,
-    wallclock_minutes: Math.max(0, Math.floor((now - wallStart) / 60000)),
+    wallclock_minutes: wallclockMinutes(state, now),
     wallclock_max_minutes: Math.floor(state.budget.wallclock.max_seconds / 60),
   };
 }

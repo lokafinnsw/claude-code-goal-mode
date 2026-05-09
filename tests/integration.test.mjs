@@ -234,3 +234,37 @@ describe('runStopHook hardening fix-ups', () => {
     expect(notes).toContain('lifecycle=unmet');
   });
 });
+
+describe('runStopHook PLUGIN_ROOT runtime resolution (Bug 3)', () => {
+  it('honors CLAUDE_PLUGIN_ROOT set after module import', async () => {
+    // Import once (already done at top of file). Now override env.
+    const origPluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+
+    // Setup: a temp dir with custom prompts/ that produces a distinguishable token.
+    const customPluginRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'custom-plugin-'));
+    fs.mkdirSync(path.join(customPluginRoot, 'prompts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(customPluginRoot, 'prompts', 'continuation.md'),
+      'CUSTOM_PROMPT_MARKER iteration {{iteration}}'
+    );
+
+    try {
+      process.env.CLAUDE_PLUGIN_ROOT = customPluginRoot;
+
+      const { root, tPath } = setupProject(minimalTree(), pursuingState(), JSON.stringify({
+        message: { role: 'assistant', content: [{ type: 'text', text: 'no tags' }] },
+      }) + '\n');
+
+      const result = await runStopHook({
+        stdin: { session_id: 'sess-1', transcript_path: tPath },
+        projectRoot: root,
+      });
+
+      expect(result.stdout).not.toBeNull();
+      expect(result.stdout.reason).toContain('CUSTOM_PROMPT_MARKER');
+    } finally {
+      if (origPluginRoot === undefined) delete process.env.CLAUDE_PLUGIN_ROOT;
+      else process.env.CLAUDE_PLUGIN_ROOT = origPluginRoot;
+    }
+  });
+});
