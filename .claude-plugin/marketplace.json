@@ -1,0 +1,13 @@
+{
+  "name": "goal-mode",
+  "owner": {
+    "name": "claude-code-goal-mode contributors"
+  },
+  "plugins": [
+    {
+      "name": "goal-mode",
+      "source": ".",
+      "description": "Long-horizon autonomous mode with plan-tree, acceptance criteria, and triple budget."
+    }
+  ]
+}
