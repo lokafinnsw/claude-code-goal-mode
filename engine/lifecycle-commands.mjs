@@ -19,7 +19,7 @@
  *     is already exhausted (matches the budget-limit semantics from
  *     applyMutations and stop-hook).
  *   - clearGoal: removes .claude/goals/active/ (optionally archives first).
- *   - abandonGoal: pursuing|paused|review-pending → unmet, records reason.
+ *   - abandonGoal: pursuing|paused → unmet (refuses other lifecycles to preserve terminal state)
  *
  * CLI wrappers in engine/pause-resume-cli.mjs, engine/clear-cli.mjs,
  * engine/abandon-cli.mjs are thin I/O shells; this module is fully
@@ -105,8 +105,11 @@ export function clearGoal(projectRoot, { archive = false } = {}) {
   if (archive) {
     const tree = loadTree(projectRoot);
     const slug = tree?.goal_id ?? 'unknown';
-    const ts = new Date().toISOString().slice(0, 10);
-    archivedTo = path.join(archiveDir(projectRoot), `${ts}-${slug}`);
+    // Full ISO timestamp (with `:` and `.` replaced for filesystem safety) so
+    // each clear gets a unique archive — same-day, same-goal_id second clear
+    // would otherwise overwrite the prior archive.
+    const isoSafe = new Date().toISOString().replace(/[:.]/g, '-');
+    archivedTo = path.join(archiveDir(projectRoot), `${isoSafe}-${slug}`);
     fs.mkdirSync(archivedTo, { recursive: true });
     fs.cpSync(adir, archivedTo, { recursive: true });
   }
@@ -118,10 +121,19 @@ export function clearGoal(projectRoot, { archive = false } = {}) {
  * Mark an active goal as 'unmet' (manual abandon). Records ended_at +
  * ended_reason and appends an 'unmet' history event with the reason in
  * payload. Default reason is "manual abandon".
+ *
+ * Refuses unless lifecycle is 'pursuing' or 'paused' — prevents silently
+ * destroying ended_at / ended_reason on already-terminal states (achieved,
+ * unmet) or transitioning out of pre-pursuit states (draft).
  */
+const ABANDONABLE_LIFECYCLES = new Set(['pursuing', 'paused']);
+
 export function abandonGoal(projectRoot, { reason = 'manual abandon' } = {}) {
   const state = loadState(projectRoot);
   if (!state) return { ok: false, error: 'no active goal' };
+  if (!ABANDONABLE_LIFECYCLES.has(state.lifecycle)) {
+    return { ok: false, error: `cannot abandon from lifecycle=${state.lifecycle}` };
+  }
   const now = new Date().toISOString();
   state.lifecycle = 'unmet';
   state.ended_at = now;

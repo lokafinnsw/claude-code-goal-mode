@@ -194,3 +194,78 @@ describe('abandonGoal', () => {
     expect(state.ended_reason).toBe('manual abandon');
   });
 });
+
+describe('lifecycle hardening fix-ups', () => {
+  it('abandonGoal refuses to abandon an achieved goal (I-1)', () => {
+    const state = pursuingState();
+    state.lifecycle = 'achieved';
+    state.ended_at = '2026-05-09T01:00:00.000Z';
+    state.ended_reason = 'all tasks achieved';
+    const root = setup(sampleTree(), state);
+    const result = abandonGoal(root, { reason: 'changed mind' });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/cannot abandon from lifecycle=achieved/);
+    // Original ended fields preserved.
+    const after = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(after.lifecycle).toBe('achieved');
+    expect(after.ended_reason).toBe('all tasks achieved');
+  });
+
+  it('abandonGoal refuses to abandon an already-unmet goal (I-1)', () => {
+    const state = pursuingState();
+    state.lifecycle = 'unmet';
+    state.ended_at = '2026-05-09T01:00:00.000Z';
+    state.ended_reason = '3 consecutive blocks on the same node';
+    const root = setup(sampleTree(), state);
+    const result = abandonGoal(root, { reason: 'redundant' });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/cannot abandon from lifecycle=unmet/);
+    // Original ended_reason preserved.
+    const after = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(after.ended_reason).toBe('3 consecutive blocks on the same node');
+  });
+
+  it('abandonGoal refuses to abandon a draft goal (I-1)', () => {
+    const state = pursuingState();
+    state.lifecycle = 'draft';
+    const root = setup(sampleTree(), state);
+    const result = abandonGoal(root, { reason: 'never started' });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/cannot abandon from lifecycle=draft/);
+  });
+
+  it('abandonGoal allows abandon from paused (I-1)', () => {
+    const state = pursuingState();
+    state.lifecycle = 'paused';
+    state.paused_at = '2026-05-09T01:00:00.000Z';
+    const root = setup(sampleTree(), state);
+    const result = abandonGoal(root, { reason: 'gave up' });
+    expect(result.ok).toBe(true);
+    const after = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(after.lifecycle).toBe('unmet');
+    expect(after.ended_reason).toBe('gave up');
+  });
+
+  it('clearGoal with archive=true creates unique paths even within the same second (I-2)', async () => {
+    const root = setup(sampleTree(), pursuingState());
+
+    // First archive.
+    const r1 = clearGoal(root, { archive: true });
+    expect(r1.ok).toBe(true);
+    expect(r1.archivedTo).toBeTruthy();
+    expect(fs.existsSync(r1.archivedTo)).toBe(true);
+
+    // Re-create active goal and archive again immediately (same goal_id, same minute).
+    saveTree(root, sampleTree());
+    saveState(root, pursuingState());
+    // Wait at least 2ms to guarantee a different ISO-millisecond timestamp.
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const r2 = clearGoal(root, { archive: true });
+    expect(r2.ok).toBe(true);
+    expect(r2.archivedTo).toBeTruthy();
+    expect(r2.archivedTo).not.toBe(r1.archivedTo);
+    expect(fs.existsSync(r2.archivedTo)).toBe(true);
+    // Both archives still exist — first was not overwritten.
+    expect(fs.existsSync(r1.archivedTo)).toBe(true);
+  });
+});
