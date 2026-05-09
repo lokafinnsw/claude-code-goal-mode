@@ -3,3 +3,6 @@ node_modules/
 *.log
 .vitest-cache/
 .tmp-*
+
+# Internal development tracker — never push to public repo
+HANDOVER.md

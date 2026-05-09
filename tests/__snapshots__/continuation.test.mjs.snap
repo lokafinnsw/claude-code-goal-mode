@@ -1,0 +1,216 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`audit-instructions.md snapshot > renders with criteria, evidence (with nested file/line), and validate 1`] = `
+"You are reviewing task \`s1.e1.t1\` ("Implement RT-rotation") for completeness.
+
+**Task goal:** Rotate refresh token on every use.
+
+**Acceptance criteria:**
+
+- (#0) Old token rejected
+
+- (#1) New token issued
+
+
+**Evidence the implementer collected:**
+
+- iter 6, criterion #0 — rejected at line 42 (src/auth.ts:42)
+
+- iter 6, criterion #1 — green \`npm test -- src/auth\` exit=0
+
+
+
+**Validation command (if available):** \`npm test -- src/auth\`
+
+
+## Your job
+
+For each acceptance criterion, decide whether the evidence genuinely demonstrates it. You may:
+- Read source files cited in evidence.
+- Run the validation command if present and you have permission.
+- Inspect screenshots or other artefacts referenced.
+
+Output a single verdict: **GO**, **NOGO**, or **REVISE**.
+- GO: every criterion is genuinely covered.
+- NOGO: at least one criterion has no real evidence (proxy-signal collapse).
+- REVISE: covered, but the implementation needs adjustment before it should land.
+
+Then explain in 3–8 sentences which criteria you considered, what evidence you accepted or rejected, and why.
+
+Do not accept "tests passed" by itself as evidence — verify the test actually exercises the criterion.
+"
+`;
+
+exports[`budget-limit.md snapshot > renders the budget-exhausted graceful exit prompt 1`] = `
+"# 🟡 Goal — budget exhausted (final turn)
+
+The iterations budget for this goal has been reached:
+- Iterations: 100/100
+- Tokens: 1850000/2000000
+- Wall-clock: 215m / 240m
+
+This is your **final turn** for this goal. Do not attempt to continue work.
+
+## What to do this turn
+
+1. Append a progress summary to \`.claude/goals/active/notes.md\` titled \`## Budget exhausted at iteration 100 (2026-05-09T22:00:00Z)\`. Include:
+   - What is achieved (by sprint/epic/task id).
+   - What is still pending or pursuing — for each, a 1-line "to resume, do X" hint.
+   - What blockers remain unresolved.
+2. **Do not** emit \`<task-status>achieved</task-status>\` for any task that is not actually finished. The engine will mark this run \`budget-limited\` regardless of what you claim.
+3. Output the summary text to chat as well, so the user sees it.
+
+After this turn, the engine will not invoke you again for this goal until \`/goal:resume\` (which requires fresh budget) or \`/goal:clear\`.
+"
+`;
+
+exports[`continuation.md snapshot render > renders against a representative state 1`] = `
+"# 🎯 Goal continuation — iteration 7/100
+
+## Position in plan
+- **Sprint:** Sprint 1: Auth
+- **Epic:** Epic 1.1: Token refresh
+- **Task:** Implement RT-rotation (id: \`s1.e1.t1\`)
+- **Work front:** engine
+
+## Goal of this task
+Rotate refresh token on every use.
+
+## Acceptance criteria — none can be skipped
+
+- [x] (#0) Old token rejected
+
+- [ ] (#1) New token issued
+
+
+## Already collected evidence
+
+- iter 6: criterion #0 — rejected at line 42 (src/auth.ts:42)
+
+
+## What to do this turn
+1. **Study the actual code/docs** related to this task. Do not paraphrase git log.
+2. Make a concrete change OR collect verifying evidence.
+3. Use these structured tags as you progress:
+   - \`<evidence file="path" line="N" criterion="i" note="why this proves criterion i" />\` — one per criterion you cover.
+   - \`<evidence command="cmd" exit_code="0" criterion="i" note="..." />\` — when verification is by shell command.
+   - \`<task-status>pursuing|achieved|blocked</task-status>\` — your own assessment.
+
+   - When you believe the task is achieved, you must request review: \`<review-request agents="aaa-art-director,rpg-game-designer"/>\`. The cursor will not advance until every reviewer returns GO.
+
+
+   - Run \`npm test -- src/auth\` and attach exit code as \`<evidence command="npm test -- src/auth" exit_code="N" criterion="i" note="..." />\`.
+
+4. **Do not accept proxy signals** as completion. "Tests passed" ≠ "criterion i is met". Map each criterion to specific evidence.
+5. If the task is unsolvable in this scope: \`<task-status>blocked</task-status>\` plus \`<blocker>reason</blocker>\`. Do not silently skip.
+
+## Anti-patterns (do not)
+- Do not edit \`.claude/goals/active/tree.json\` or \`state.json\` directly. Emit tags; the engine will mutate state.
+- Do not declare \`<task-status>achieved</task-status>\` without \`<evidence criterion="i" .../>\` for **every** criterion.
+- Do not output a \`<promise>\` tag or any other escape phrase. The engine ignores them.
+
+## Budget remaining
+- Iterations: 7/100
+- Tokens: 12345/2000000
+- Wall-clock: 22m / 240m
+"
+`;
+
+exports[`continuation-blocked.md snapshot > renders with verdicts and uncovered criteria 1`] = `
+"# ⛔ Goal continuation — task is blocked (attempt 2/3)
+
+The task **Implement RT-rotation** (id: \`s1.e1.t1\`) is currently blocked.
+
+**Last blocker reason:** Token signing key rotation untested under load
+
+
+**Last review verdicts:**
+
+- aaa-art-director (NOGO): No load-test evidence for criterion #1
+
+- rpg-game-designer (REVISE): Revoke flow needs second integration test
+
+
+
+## Acceptance criteria still uncovered
+
+- (#1) New token issued
+
+
+## What to do this turn
+
+1. Reread the criteria above and the verdicts/blocker. Decide concretely what to change.
+2. Make the change, then either:
+   - Re-emit \`<task-status>achieved</task-status>\` with NEW evidence covering the previously-uncovered criteria; this re-triggers review.
+   - Or, if you believe the task as-stated is impossible, emit \`<task-status>blocked</task-status>\` with a fresh \`<blocker>reason</blocker>\`. After 3 consecutive blocks the goal escalates to \`unmet\`.
+
+3. Do not declare \`achieved\` without addressing the verdicts/criteria — the engine will reject it.
+"
+`;
+
+exports[`continuation-review.md snapshot > renders with reviewer list and audit body 1`] = `
+"# 🔵 Goal continuation — review-pending
+
+The task **Implement RT-rotation** (id: \`s1.e1.t1\`) declared itself achieved. Before the cursor advances, you must collect independent verdicts from every reviewer in this list:
+
+**Reviewers required:** aaa-art-director,rpg-game-designer
+
+## What to do this turn
+
+For each reviewer above, invoke the Agent tool:
+
+\`\`\`
+Agent({
+  subagent_type: "<one of aaa-art-director,rpg-game-designer>",
+  description: "Review task s1.e1.t1",
+  prompt: <see audit-instructions.md content>
+})
+\`\`\`
+
+The audit instruction body to pass into each Agent call is below — use it verbatim, substituting the reviewer name where indicated:
+
+---
+(audit body placeholder for snapshot)
+---
+
+After all Agent calls return, emit one tag per reviewer:
+
+\`\`\`
+<audit-verdict agent="<reviewer>" status="GO|NOGO|REVISE">verdict text</audit-verdict>
+\`\`\`
+
+## Rules
+
+- All reviewers must return GO before cursor advances.
+- Any NOGO or REVISE → cursor stays on this task; engine increments review_attempts and gives you another pursuing turn to address concerns.
+- 3 consecutive review cycles ending in NOGO mark this node \`blocked\` and may escalate to \`unmet\`.
+- If a requested reviewer's \`subagent_type\` is unavailable in this environment, emit \`<audit-verdict agent="<reviewer>" status="REVISE">unavailable; user must run /goal:approve</audit-verdict>\` so the user is asked to manually approve.
+- Do not write evidence tags this turn — only verdict tags.
+"
+`;
+
+exports[`final-summary.md snapshot > renders the goal-achieved summary prompt 1`] = `
+"# ✅ Goal achieved — final summary turn
+
+Every leaf task in this plan is now \`achieved\`. This is the final summary turn.
+
+## What to do this turn
+
+1. Append a closing block to \`.claude/goals/active/notes.md\`:
+   \`\`\`
+   ## Goal achieved at iteration 73 (2026-05-09T23:30:00Z)
+
+   - Sprints: 3
+   - Epics: 8
+   - Tasks: 24
+   - Total iterations: 73
+   - Total tokens (best-effort): 1340000
+   - Wall-clock: 188 minutes
+   - Review verdicts collected: 12
+   \`\`\`
+2. List one-line per achieved task, grouped by sprint, with the most informative evidence note for each.
+3. Output the same content to chat so the user sees it.
+
+After this turn, the goal lifecycle is \`achieved\`. Run \`/goal:clear --archive\` to snapshot and reset.
+"
+`;
