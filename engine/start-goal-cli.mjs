@@ -13,11 +13,21 @@
  */
 import { startGoal } from './start-goal.mjs';
 
+function parsePositiveInt(label, raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+    console.error(`bad --${label}: ${raw}`);
+    process.exit(2);
+  }
+  return n;
+}
+
 const args = process.argv.slice(2);
 let maxIter = 100, tokenBudget = 2_000_000, timeBudgetSeconds = 14400;
+let force = false;
 for (let i = 0; i < args.length; i++) {
-  if (args[i] === '--max-iter') maxIter = Number(args[++i]);
-  else if (args[i] === '--token-budget') tokenBudget = Number(args[++i]);
+  if (args[i] === '--max-iter') maxIter = parsePositiveInt('max-iter', args[++i]);
+  else if (args[i] === '--token-budget') tokenBudget = parsePositiveInt('token-budget', args[++i]);
   else if (args[i] === '--time-budget') {
     const v = args[++i];
     const m = v.match(/^(\d+)([mh])?$/);
@@ -25,9 +35,14 @@ for (let i = 0; i < args.length; i++) {
     const n = Number(m[1]);
     timeBudgetSeconds = m[2] === 'h' ? n * 3600 : n * 60;
   }
+  else if (args[i] === '--force') force = true;
 }
-const sessionId = process.env.CLAUDE_CODE_SESSION_ID ?? 'unknown';
-const result = startGoal(process.cwd(), { sessionId, maxIter, tokenBudget, timeBudgetSeconds });
+const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+if (!sessionId) {
+  console.error('CLAUDE_CODE_SESSION_ID env var not set; this command must run inside a Claude Code session.');
+  process.exit(2);
+}
+const result = startGoal(process.cwd(), { sessionId, maxIter, tokenBudget, timeBudgetSeconds, force });
 if (!result.ok) { console.error(`❌ ${result.error}`); process.exit(1); }
 console.log(`🎯 Goal pursuing — cursor: ${result.cursor}, iter budget: ${maxIter}, token budget: ${tokenBudget}, time budget: ${timeBudgetSeconds}s`);
 console.log(`Stop-hook is now active. Make your first move on this task.`);

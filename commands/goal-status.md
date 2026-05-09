@@ -1,10 +1,10 @@
 ---
 description: "Show current goal status: tree, cursor, budget, last events"
-allowed-tools: ["Bash(node:*)"]
+allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/status-goal.sh:*)"]
 ---
 
 # Goal Status
 
 ```!
-node "${CLAUDE_PLUGIN_ROOT}/engine/render-status-cli.mjs"
+"${CLAUDE_PLUGIN_ROOT}/scripts/status-goal.sh"
 ```

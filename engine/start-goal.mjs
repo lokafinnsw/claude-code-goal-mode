@@ -29,22 +29,29 @@
  * Composition: loadTree (Phase 1), walkLeafTasks (Phase 1), saveState (Phase 1).
  */
 
-import { loadTree, saveState } from './state.mjs';
+import { loadTree, loadState, saveState } from './state.mjs';
 import { walkLeafTasks } from './traversal.mjs';
 
-export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBudgetSeconds }) {
+export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBudgetSeconds, force = false }) {
   const tree = loadTree(projectRoot);
   if (!tree) return { ok: false, error: 'no goal tree found; run /goal:plan first' };
   if (!tree.approved_at) return { ok: false, error: 'tree not approved; run /goal:approve-plan' };
+  const existingState = loadState(projectRoot);
+  if (existingState && !force) {
+    return {
+      ok: false,
+      error: `goal already active (lifecycle=${existingState.lifecycle}, cursor=${existingState.cursor}); use --force to restart`,
+    };
+  }
   const tasks = walkLeafTasks(tree);
-  const firstPending = tasks.find(t => t.status === 'pending');
-  if (!firstPending) return { ok: false, error: 'no pending tasks in tree' };
+  const firstActive = tasks.find(t => t.status === 'pending' || t.status === 'pursuing');
+  if (!firstActive) return { ok: false, error: 'no pending or pursuing tasks in tree' };
   const now = new Date().toISOString();
   const state = {
     schema_version: 1,
     goal_id: tree.goal_id,
     lifecycle: 'pursuing',
-    cursor: firstPending.id,
+    cursor: firstActive.id,
     budget: {
       iterations: { used: 0, max: maxIter },
       tokens: { used: 0, max: tokenBudget },
@@ -60,11 +67,11 @@ export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBu
         ts: now,
         iteration: 0,
         event: 'started',
-        node_id: firstPending.id,
+        node_id: firstActive.id,
         payload: { maxIter, tokenBudget, timeBudgetSeconds },
       },
     ],
   };
   saveState(projectRoot, state);
-  return { ok: true, cursor: firstPending.id };
+  return { ok: true, cursor: firstActive.id };
 }
