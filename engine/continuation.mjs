@@ -56,6 +56,8 @@
  * Pure: no I/O, no globals, no Math.random.
  */
 
+import { findNodeById } from './traversal.mjs';
+
 export class TemplateRenderError extends Error {
   constructor(message, details) {
     super(message);
@@ -227,4 +229,81 @@ export function render(template, ctx) {
 
 function getPath(obj, path) {
   return path.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);
+}
+
+/**
+ * Build the rendering context object for a continuation prompt.
+ *
+ * Inputs:
+ *   - tree:     the goal-tree (Phase-1 schema-shaped).
+ *   - state:    the run-state (Phase-1 schema-shaped). Must contain
+ *               state.budget.iterations.{used,max}, .tokens.{used,max},
+ *               .wallclock.{started_at, max_seconds}.
+ *   - cursorId: the id of the task node to render the prompt against.
+ *
+ * Returns: a flat ctx object keyed by the snake_case variables used in
+ *          prompts/continuation.md (and siblings). Returns null if the
+ *          cursor id does not match any node in the tree (caller must
+ *          handle this).
+ *
+ * Derived fields:
+ *   - sprint_title / epic_title come from the cursor's ancestor chain.
+ *   - criteria[] is the task.acceptance_criteria mapped with a
+ *     covered_marker ('x' if any evidence record covers that criterion
+ *     index, ' ' otherwise).
+ *   - has_review / has_validate are boolean shortcuts the templates
+ *     use to render conditional blocks.
+ *   - wallclock_minutes is derived as (Date.now() - wallclock.started_at)
+ *     in whole minutes — IMPURE due to Date.now() in this one place; the
+ *     rest of the function is pure.
+ */
+export function buildContext(tree, state, cursorId) {
+  const task = findNodeById(tree, cursorId);
+  if (!task) return null;
+  const ancestors = pathToNode(tree.root, cursorId);
+  const sprint = ancestors.find(n => n.type === 'sprint');
+  const epic = ancestors.find(n => n.type === 'epic');
+  const coveredCriteria = new Set(task.evidence.map(e => e.criterion_index).filter(i => i !== null));
+  const criteria = task.acceptance_criteria.map((text, index) => ({
+    index, text, covered_marker: coveredCriteria.has(index) ? 'x' : ' ',
+  }));
+  const wallStart = new Date(state.budget.wallclock.started_at).getTime();
+  const wallNow = Date.now();
+  return {
+    iteration: state.budget.iterations.used,
+    iterations_max: state.budget.iterations.max,
+    sprint_title: sprint?.title ?? '',
+    epic_title: epic?.title ?? '',
+    task_title: task.title,
+    task_id: task.id,
+    work_front: task.work_front ?? '',
+    task_goal: task.goal,
+    criteria,
+    evidence: task.evidence,
+    has_review: task.review.length > 0,
+    review_agents_csv: task.review.join(','),
+    has_validate: !!task.validate,
+    validate: task.validate ?? '',
+    blocker_reason: task.blocker_reason ?? '',
+    review_attempts: task.review_attempts,
+    tokens_used: state.budget.tokens.used,
+    tokens_max: state.budget.tokens.max,
+    wallclock_minutes: Math.floor((wallNow - wallStart) / 60000),
+    wallclock_max_minutes: Math.floor(state.budget.wallclock.max_seconds / 60),
+  };
+}
+
+function pathToNode(root, id) {
+  const path = [];
+  function visit(node) {
+    path.push(node);
+    if (node.id === id) return true;
+    for (const child of node.children) {
+      if (visit(child)) return true;
+    }
+    path.pop();
+    return false;
+  }
+  visit(root);
+  return path;
 }

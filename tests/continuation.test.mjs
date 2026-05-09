@@ -250,3 +250,37 @@ describe('audit-instructions.md snapshot', () => {
     expect(render(tpl, ctx)).toMatchSnapshot();
   });
 });
+
+import { buildContext } from '../engine/continuation.mjs';
+
+describe('buildContext', () => {
+  it('builds the full context object for a pursuing turn', () => {
+    const tree = {
+      root: {
+        id: 's', type: 'sprint', title: 'Sprint 1', goal: '', acceptance_criteria: [],
+        review: [], validate: null, work_front: 'engine', status: 'pursuing',
+        evidence: [], blocker_reason: null, review_attempts: 0, notes: [],
+        children: [
+          { id: 's.e1', type: 'epic', title: 'Epic 1.1', goal: '', acceptance_criteria: [], review: [], validate: null, work_front: 'engine', status: 'pursuing', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [
+            { id: 's.e1.t1', type: 'task', title: 'T1', goal: 'Do thing.', acceptance_criteria: ['c0', 'c1'], review: ['agent-a'], validate: 'npm test', work_front: 'engine', status: 'pursuing', evidence: [
+              { ts: 't', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'covers c0' },
+            ], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
+          ] },
+        ],
+      },
+    };
+    const state = {
+      budget: { iterations: { used: 7, max: 100 }, tokens: { used: 1000, max: 1000000 }, wallclock: { started_at: new Date(Date.now() - 60_000).toISOString(), max_seconds: 14400 } },
+    };
+    const ctx = buildContext(tree, state, 's.e1.t1');
+    expect(ctx.task_id).toBe('s.e1.t1');
+    expect(ctx.sprint_title).toBe('Sprint 1');
+    expect(ctx.epic_title).toBe('Epic 1.1');
+    expect(ctx.criteria.length).toBe(2);
+    expect(ctx.criteria[0].covered_marker).toBe('x');
+    expect(ctx.criteria[1].covered_marker).toBe(' ');
+    expect(ctx.has_review).toBe(true);
+    expect(ctx.has_validate).toBe(true);
+    expect(ctx.review_agents_csv).toBe('agent-a');
+  });
+});
