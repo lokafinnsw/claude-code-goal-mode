@@ -250,6 +250,16 @@ describe('unmet-summary.md snapshot render', () => {
   });
 });
 
+describe('plan-bootstrap.md snapshot render', () => {
+  it('renders against a representative mission', () => {
+    const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/plan-bootstrap.md'), 'utf8');
+    const ctx = {
+      mission: 'Migrate the auth module from session cookies to JWT, with zero downtime and full test coverage.',
+    };
+    expect(render(tpl, ctx)).toMatchSnapshot();
+  });
+});
+
 describe('audit-instructions.md snapshot', () => {
   it('renders with criteria, evidence (with nested file/line), and validate', () => {
     const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/audit-instructions.md'), 'utf8');
