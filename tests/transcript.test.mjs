@@ -30,3 +30,32 @@ describe('readLastAssistantText', () => {
     expect(readLastAssistantText('/nonexistent')).toBe('');
   });
 });
+
+describe('readLastAssistantText hardening', () => {
+  it('returns the LAST text block within a single multi-block assistant message (in-message last-wins)', () => {
+    const f = tmpfile(JSON.stringify({
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'first' },
+          { type: 'tool_use' },
+          { type: 'text', text: 'second' },
+        ],
+      },
+    }));
+    expect(readLastAssistantText(f)).toBe('second');
+  });
+
+  it('skips malformed JSON lines and returns last valid assistant text', () => {
+    const f = tmpfile([
+      JSON.stringify({ message: { role: 'assistant', content: [{ type: 'text', text: 'before' }] } }),
+      'not valid json {{{',
+      JSON.stringify({ message: { role: 'assistant', content: [{ type: 'text', text: 'after' }] } }),
+    ].join('\n'));
+    expect(readLastAssistantText(f)).toBe('after');
+  });
+
+  it('returns empty string when transcript path is a directory (EISDIR) — never throws', () => {
+    expect(readLastAssistantText(os.tmpdir())).toBe('');
+  });
+});

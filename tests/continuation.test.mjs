@@ -284,3 +284,88 @@ describe('buildContext', () => {
     expect(ctx.review_agents_csv).toBe('agent-a');
   });
 });
+
+describe('buildContext hardening', () => {
+  function singleTaskTree(criteria = ['c0'], evidence = []) {
+    return {
+      root: {
+        id: 't', type: 'task', title: 'T', goal: 'G', acceptance_criteria: criteria,
+        review: [], validate: null, work_front: null, status: 'pursuing',
+        evidence, blocker_reason: null, review_attempts: 0, notes: [], children: [],
+      },
+    };
+  }
+
+  function freshState(startedAtIso = '2026-05-09T22:00:00.000Z') {
+    return {
+      budget: {
+        iterations: { used: 1, max: 100 },
+        tokens: { used: 0, max: 1_000_000 },
+        wallclock: { started_at: startedAtIso, max_seconds: 14400 },
+      },
+    };
+  }
+
+  it('returns null when cursorId does not match any node', () => {
+    const tree = singleTaskTree();
+    const state = freshState();
+    expect(buildContext(tree, state, 'nonexistent')).toBeNull();
+  });
+
+  it('marks all criteria uncovered when evidence is empty', () => {
+    const tree = singleTaskTree(['c0', 'c1', 'c2'], []);
+    const state = freshState();
+    const ctx = buildContext(tree, state, 't');
+    expect(ctx.criteria.every(c => c.covered_marker === ' ')).toBe(true);
+  });
+
+  it('marks all criteria covered when evidence covers each', () => {
+    const tree = singleTaskTree(['c0', 'c1'], [
+      { ts: 't', iteration: 1, criterion_index: 0, file: 'a', line: null, commit: null, command: null, exit_code: null, note: 'a' },
+      { ts: 't', iteration: 1, criterion_index: 1, file: 'b', line: null, commit: null, command: null, exit_code: null, note: 'b' },
+    ]);
+    const state = freshState();
+    const ctx = buildContext(tree, state, 't');
+    expect(ctx.criteria.every(c => c.covered_marker === 'x')).toBe(true);
+  });
+
+  it('exposes has_review=false and empty review_agents_csv when review[] is empty', () => {
+    const tree = singleTaskTree();
+    const state = freshState();
+    const ctx = buildContext(tree, state, 't');
+    expect(ctx.has_review).toBe(false);
+    expect(ctx.review_agents_csv).toBe('');
+  });
+
+  it('exposes has_validate=false and empty validate when task.validate is null', () => {
+    const tree = singleTaskTree();
+    const state = freshState();
+    const ctx = buildContext(tree, state, 't');
+    expect(ctx.has_validate).toBe(false);
+    expect(ctx.validate).toBe('');
+  });
+
+  it('returns sprint_title="" and epic_title="" for a task at the root (no ancestors)', () => {
+    const tree = singleTaskTree();
+    const state = freshState();
+    const ctx = buildContext(tree, state, 't');
+    expect(ctx.sprint_title).toBe('');
+    expect(ctx.epic_title).toBe('');
+  });
+
+  it('produces deterministic wallclock_minutes when now is injected (I1)', () => {
+    const tree = singleTaskTree();
+    const state = freshState('2026-05-09T22:00:00.000Z');
+    const now = new Date('2026-05-09T22:30:00.000Z').getTime();
+    const ctx = buildContext(tree, state, 't', now);
+    expect(ctx.wallclock_minutes).toBe(30);
+  });
+
+  it('clamps wallclock_minutes to 0 on clock skew with started_at in the future (I2)', () => {
+    const tree = singleTaskTree();
+    const state = freshState('2026-05-09T23:00:00.000Z');
+    const now = new Date('2026-05-09T22:30:00.000Z').getTime();
+    const ctx = buildContext(tree, state, 't', now);
+    expect(ctx.wallclock_minutes).toBe(0);
+  });
+});

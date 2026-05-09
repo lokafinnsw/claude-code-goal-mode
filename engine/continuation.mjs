@@ -54,6 +54,16 @@
  *   `instanceof TemplateRenderError`.
  *
  * Pure: no I/O, no globals, no Math.random.
+ *
+ * Also exports:
+ *   - buildContext(tree, state, cursorId, now?) — assembles the snake_case
+ *     ctx object that prompts/*.md templates expect, by walking the tree's
+ *     ancestor chain to the cursor task, mapping acceptance_criteria with
+ *     covered/uncovered markers, and exposing budget fields. Returns null
+ *     if cursorId does not match any node. The `now` parameter (default
+ *     Date.now()) is injectable for testability — the rest of the function
+ *     is pure given fixed `now`. wallclock_minutes is clamped to 0 on
+ *     clock skew (started_at in the future).
  */
 
 import { findNodeById } from './traversal.mjs';
@@ -257,18 +267,17 @@ function getPath(obj, path) {
  *     in whole minutes — IMPURE due to Date.now() in this one place; the
  *     rest of the function is pure.
  */
-export function buildContext(tree, state, cursorId) {
+export function buildContext(tree, state, cursorId, now = Date.now()) {
   const task = findNodeById(tree, cursorId);
   if (!task) return null;
   const ancestors = pathToNode(tree.root, cursorId);
   const sprint = ancestors.find(n => n.type === 'sprint');
   const epic = ancestors.find(n => n.type === 'epic');
-  const coveredCriteria = new Set(task.evidence.map(e => e.criterion_index).filter(i => i !== null));
+  const coveredCriteria = new Set(task.evidence.map(e => e.criterion_index).filter(i => i != null));
   const criteria = task.acceptance_criteria.map((text, index) => ({
     index, text, covered_marker: coveredCriteria.has(index) ? 'x' : ' ',
   }));
   const wallStart = new Date(state.budget.wallclock.started_at).getTime();
-  const wallNow = Date.now();
   return {
     iteration: state.budget.iterations.used,
     iterations_max: state.budget.iterations.max,
@@ -288,7 +297,7 @@ export function buildContext(tree, state, cursorId) {
     review_attempts: task.review_attempts,
     tokens_used: state.budget.tokens.used,
     tokens_max: state.budget.tokens.max,
-    wallclock_minutes: Math.floor((wallNow - wallStart) / 60000),
+    wallclock_minutes: Math.max(0, Math.floor((now - wallStart) / 60000)),
     wallclock_max_minutes: Math.floor(state.budget.wallclock.max_seconds / 60),
   };
 }

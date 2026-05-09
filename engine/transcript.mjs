@@ -34,7 +34,8 @@
  *   - Missing file              → returns ''.
  *   - Malformed JSON line       → that line silently skipped, scan continues.
  *   - No assistant text present → returns ''.
- *   Never throws.
+ *   Never throws. Drops the existsSync pre-check to eliminate a TOCTOU
+ *   race; any I/O error (ENOENT, EACCES, EISDIR, rotation) returns ''.
  *
  * Pure-ish: side effects limited to a single synchronous file read.
  */
@@ -42,8 +43,17 @@
 import fs from 'node:fs';
 
 export function readLastAssistantText(transcriptPath) {
-  if (!fs.existsSync(transcriptPath)) return '';
-  const lines = fs.readFileSync(transcriptPath, 'utf8').split('\n').filter(Boolean);
+  let text;
+  try {
+    text = fs.readFileSync(transcriptPath, 'utf8');
+  } catch {
+    // Missing file (ENOENT), permission denied (EACCES), is-a-directory
+    // (EISDIR), rotation race — all of these manifest at the boundary
+    // between Claude Code writing the transcript and the Stop hook reading
+    // it. Returning '' is the documented "never throws" contract.
+    return '';
+  }
+  const lines = text.split('\n').filter(Boolean);
   let last = '';
   for (const line of lines) {
     try {
@@ -54,7 +64,7 @@ export function readLastAssistantText(transcriptPath) {
       for (const b of blocks) {
         if (b?.type === 'text' && typeof b.text === 'string') last = b.text;
       }
-    } catch { /* skip malformed */ }
+    } catch { /* skip malformed line */ }
   }
   return last;
 }
