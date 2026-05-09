@@ -1,0 +1,15 @@
+{
+  "description": "Goal Mode plugin Stop hook (no-op in Phase 0).",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
