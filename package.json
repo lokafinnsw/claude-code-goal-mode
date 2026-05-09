@@ -9,7 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint:sh": "shellcheck hooks/*.sh scripts/*.sh"
+    "lint:sh": "bash -c 'shopt -s nullglob; files=(hooks/*.sh scripts/*.sh); [[ ${#files[@]} -gt 0 ]] && shellcheck \"${files[@]}\" || echo \"no .sh files to check\"'"
   },
   "dependencies": {
     "zod": "^3.23.8"

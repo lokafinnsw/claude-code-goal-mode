@@ -19,4 +19,4 @@ jobs:
       - name: shellcheck
         run: |
           sudo apt-get install -y shellcheck
-          shellcheck hooks/*.sh
+          npm run lint:sh
