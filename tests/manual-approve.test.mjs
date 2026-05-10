@@ -184,4 +184,24 @@ describe('manualApprove', () => {
     const body = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/audits', auditFiles[0]), 'utf8'));
     expect(body.node_id).toBe('s/t1');
   });
+
+  it('Bug B: collapses .. sequences in node_id to prevent traversal escape', () => {
+    const tree = sampleTree();
+    tree.root.children[0].id = '../escape-attempt';
+    tree.root.children[1].id = 's.t2';
+    const state = sampleState('../escape-attempt');
+    const root = setup(tree, state);
+
+    const result = manualApprove(root, { reason: 'ok' });
+    expect(result.ok).toBe(true);
+
+    const auditFiles = fs.readdirSync(path.join(root, '.claude/goals/active/audits'));
+    expect(auditFiles.length).toBe(1);
+    // Filename must contain neither '..' nor '/'.
+    expect(auditFiles[0]).not.toContain('..');
+    expect(auditFiles[0]).not.toContain('/');
+    // Body keeps original unsanitized value (sanitization is filename-only).
+    const body = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/audits', auditFiles[0]), 'utf8'));
+    expect(body.node_id).toBe('../escape-attempt');
+  });
 });

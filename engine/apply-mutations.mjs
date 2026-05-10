@@ -92,7 +92,12 @@ import { findNodeById, nextPendingTaskAfter } from './traversal.mjs';
 // to an unintended subdirectory. Sanitization is filename-only — the JSON
 // body keeps the original unsanitized values.
 function safeFilenamePart(s) {
-  return String(s).replace(/[^a-zA-Z0-9._-]/g, '_');
+  // Allow [a-zA-Z0-9._-]; collapse runs of 2+ dots to '_' to prevent '..'
+  // surviving sanitization (defense-in-depth against future code paths
+  // that may use the sanitized string as a path COMPONENT — currently it
+  // is always embedded in a larger token, so '..' has no exploit, but the
+  // belt-and-braces guard costs nothing).
+  return String(s).replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '_');
 }
 
 function allCriteriaCovered(node) {

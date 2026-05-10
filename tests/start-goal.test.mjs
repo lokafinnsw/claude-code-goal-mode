@@ -138,3 +138,65 @@ describe('startGoal hardening fix-ups', () => {
     expect(result.error).toMatch(/no pending or pursuing/i);
   });
 });
+
+describe('startGoal post-1.0.0 hardening (Bug A — restartable lifecycles)', () => {
+  // Bug A regression: M-2 ("refuse double-startGoal without --force") was
+  // too aggressive — it also blocked the canonical `/goal:plan →
+  // /goal:approve-plan → /goal:start` workflow because approvePlan writes
+  // a `lifecycle=approved` state to record the plan-approved history event.
+  // Fix: restartable lifecycles (draft, approved) skip the M-2 gate.
+
+  function setupWithState(stateLifecycle) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bug-a-'));
+    saveTree(root, approvedTree());
+    // Synthesize a state.json with the given lifecycle (mimicking what
+    // approvePlan writes after /goal:approve-plan).
+    const adir = path.join(root, '.claude/goals/active');
+    fs.mkdirSync(adir, { recursive: true });
+    fs.writeFileSync(path.join(adir, 'state.json'), JSON.stringify({
+      schema_version: 1,
+      goal_id: 'g',
+      lifecycle: stateLifecycle,
+      cursor: 'pending',
+      budget: {
+        iterations: { used: 0, max: 0 },
+        tokens: { used: 0, max: 0 },
+        wallclock: { started_at: '2026-05-09T00:00:00.000Z', max_seconds: 0 },
+      },
+      session_id: 'pending',
+      started_at: null, paused_at: null, ended_at: null, ended_reason: null,
+      history: [{ ts: '2026-05-09T00:00:00.000Z', iteration: 0, event: 'plan-approved', node_id: null, payload: {} }],
+    }, null, 2));
+    return root;
+  }
+
+  it('Bug A: accepts /goal:start when state.lifecycle === approved without --force', () => {
+    const root = setupWithState('approved');
+    const result = startGoal(root, { sessionId: 'sess', maxIter: 50, tokenBudget: 1_000_000, timeBudgetSeconds: 7200 });
+    expect(result.ok).toBe(true);
+    expect(result.cursor).toBe('s.t1');
+    const state = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(state.lifecycle).toBe('pursuing');
+    expect(state.session_id).toBe('sess');
+  });
+
+  it('Bug A: accepts /goal:start when state.lifecycle === draft without --force', () => {
+    const root = setupWithState('draft');
+    const result = startGoal(root, { sessionId: 'sess', maxIter: 50, tokenBudget: 1_000_000, timeBudgetSeconds: 7200 });
+    expect(result.ok).toBe(true);
+    const state = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(state.lifecycle).toBe('pursuing');
+  });
+
+  it('Bug A: still refuses without --force on pursuing/paused/achieved/unmet/budget-limited (M-2 protection preserved)', () => {
+    for (const lifecycle of ['pursuing', 'paused', 'achieved', 'unmet', 'budget-limited']) {
+      const root = setupWithState(lifecycle);
+      const result = startGoal(root, { sessionId: 'sess2', maxIter: 50, tokenBudget: 1_000_000, timeBudgetSeconds: 7200 });
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/already active/i);
+      // Original session_id preserved (not overwritten).
+      const state = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+      expect(state.lifecycle).toBe(lifecycle);
+    }
+  });
+});

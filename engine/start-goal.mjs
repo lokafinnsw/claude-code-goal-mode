@@ -37,7 +37,14 @@ export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBu
   if (!tree) return { ok: false, error: 'no goal tree found; run /goal:plan first' };
   if (!tree.approved_at) return { ok: false, error: 'tree not approved; run /goal:approve-plan' };
   const existingState = loadState(projectRoot);
-  if (existingState && !force) {
+  // RESTARTABLE_LIFECYCLES are pre-pursuit states that the canonical workflow
+  // (`/goal:plan` → `/goal:approve-plan` → `/goal:start`) writes BEFORE the
+  // user calls /goal:start. Overwriting them is the documented happy path,
+  // not an "active goal already exists" footgun. Other lifecycles (pursuing,
+  // paused, achieved, unmet, budget-limited) require explicit --force, since
+  // overwriting would lose mid-flight or terminal state.
+  const RESTARTABLE_LIFECYCLES = new Set(['draft', 'approved']);
+  if (existingState && !force && !RESTARTABLE_LIFECYCLES.has(existingState.lifecycle)) {
     return {
       ok: false,
       error: `goal already active (lifecycle=${existingState.lifecycle}, cursor=${existingState.cursor}); use --force to restart`,

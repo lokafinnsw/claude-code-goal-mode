@@ -509,4 +509,31 @@ describe('applyMutations audit persistence', () => {
     expect(body.node_id).toBe('s/t1');
     expect(body.agent).toBe('art/director');
   });
+
+  it('Bug B: collapses .. sequences in node_id and agent to prevent traversal escape', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-traversal-'));
+    const tree = twoTaskTree();
+    tree.root.children[0].id = '../escape';
+    tree.root.children[0].review = ['../../bad-agent'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].evidence = [
+      { ts: 't', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'n' },
+    ];
+    const state = mkState('../escape');
+    const tags = [{ kind: 'audit-verdict', agent: '../../bad-agent', status: 'GO', text: 'ok' }];
+
+    applyMutations(tree, state, tags, '2026-05-09T01:00:00.000Z', {
+      auditsDir: path.join(root, 'audits'),
+    });
+
+    const files = fs.readdirSync(path.join(root, 'audits'));
+    expect(files.length).toBe(1);
+    // Filename must contain neither '..' nor '/'.
+    expect(files[0]).not.toContain('..');
+    expect(files[0]).not.toContain('/');
+    // Body keeps original unsanitized values.
+    const body = JSON.parse(fs.readFileSync(path.join(root, 'audits', files[0]), 'utf8'));
+    expect(body.node_id).toBe('../escape');
+    expect(body.agent).toBe('../../bad-agent');
+  });
 });

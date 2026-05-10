@@ -54,7 +54,9 @@ import { auditsDir } from './paths.mjs';
 // chars, fs.writeFileSync would fail or write to an unintended subdirectory.
 // Sanitization is filename-only — the JSON body keeps the original value.
 function safeFilenamePart(s) {
-  return String(s).replace(/[^a-zA-Z0-9._-]/g, '_');
+  // Allow [a-zA-Z0-9._-]; collapse runs of 2+ dots to '_' to prevent '..'
+  // surviving sanitization (defense-in-depth — see twin in apply-mutations.mjs).
+  return String(s).replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '_');
 }
 
 export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
