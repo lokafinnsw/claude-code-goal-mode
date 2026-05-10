@@ -4,6 +4,23 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.10] — 2026-05-10
+
+### Fixed
+
+- **`install.sh` "Next steps" echo block still printed `/goal:X` syntax.** The bulk replace in v1.1.9 hit `prompts/`, `commands/`, `README.md`, `docs/` but missed `install.sh` itself. After re-running `bash install.sh` post-1.1.9, users would see "type /goal:help in Claude" — but `/goal:help` does not exist; the working command is `/goal-help`. Fix: replaced 5 references to `/goal:X` in install.sh's echo block with `/goal-X`. (`install.sh`)
+
+### Notes
+
+End-to-end smoke verification was performed by the maintainer:
+
+1. `bash install.sh` redeploys 11 commands to `~/.claude/commands/goal-X.md` with `${CLAUDE_PLUGIN_ROOT}` substituted to absolute paths.
+2. `unset CLAUDE_PLUGIN_ROOT && bash scripts/approve-plan.sh` (simulating Claude Desktop's invocation, since Desktop has no plugin loader to set the env var) succeeds with `✅ plan approved (304 tasks)` instead of crashing with `unbound variable`. The defensive default in v1.1.9 derives `CLAUDE_PLUGIN_ROOT` from `BASH_SOURCE`.
+
+Side effect of step 2: the test target was the maintainer's local `mancelot-only-mans/.claude/goals/active/tree.json`, so this run actually advanced its lifecycle from `draft` to `approved` and created `state.json` with the approval history event. The fix verified, but the test target now has an approved (partial, 3-sprint) plan instead of a draft. Users running similar smoke tests should target a throwaway goal directory or expect lifecycle advancement as a real side effect of the script working.
+
+[1.1.10]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.10
+
 ## [1.1.9] — 2026-05-10
 
 ### Fixed
