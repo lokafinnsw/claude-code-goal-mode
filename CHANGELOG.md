@@ -4,6 +4,47 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.17] — 2026-05-10
+
+Reverses the v1.1.16 deprecation framing of `install.sh` and rewrites it to deploy to the same plugin cache as `/plugin install` — producing byte-equivalent end state.
+
+### Why v1.1.16 was wrong
+
+v1.1.16 deprecated `install.sh` on the assumption that Claude Desktop could now run `/plugin install` directly. Verified May 2026 via grep of the embedded Claude Code binary (`~/Library/Application Support/Claude/claude-code/<ver>/claude.app/.../claude`):
+
+```
+HA3={type:"local-jsx",name:"plugin",aliases:["plugins","marketplace"],...}
+```
+
+`/plugin` is `type: "local-jsx"`, and the dispatcher rejects local-jsx commands in non-interactive sessions:
+
+```
+if(Y.type==="local-jsx" && K.options.isNonInteractiveSession){
+  ... `/${cmd} opens an interactive panel and isn't available in this environment. Run it from the Claude Code terminal instead.`
+}
+```
+
+Same applies to `/plugin marketplace add`, `/plugin uninstall`, `/reload-plugins`. Pure-Desktop users (no terminal `claude`) cannot run any of them. install.sh is the only install path for that segment, not deprecated.
+
+### Changed
+
+- **`install.sh` rewritten** to deploy to `~/.claude/plugins/cache/goal-mode/goal-mode/<version>/` (same place `/plugin install` writes), copy `marketplace.json` to `~/.claude/plugins/marketplaces/goal-mode/`, register the marketplace in `~/.claude/plugins/known_marketplaces.json` with `autoUpdate: true`, and enable the plugin in `~/.claude/settings.json` (`extraKnownMarketplaces` + `enabledPlugins`). End state is byte-equivalent to `/plugin install`. Result: slash commands appear ONLY as `/goal-mode:goal-X` in the picker (canonical plugin namespace), no `/goal-X` duplicates, no double-firing Stop hooks, no parallel "user-global" deployment. (`install.sh`)
+
+- **`install.sh --uninstall`** added: removes plugin cache dir, marketplace dir, jq-edits known_marketplaces.json + settings.json to drop the goal-mode entries.
+
+- **README "Path B" section** rewritten: install.sh framed as "for Desktop-only users (no terminal CLI)", not deprecated. Documents that `/plugin install` is `local-jsx`-typed and rejected in non-interactive Claude Desktop sessions, citing the binary grep evidence. Cleanup recipe for users who used pre-v1.1.17 install.sh layout (those legacy artifacts in `~/.claude/commands/` + `settings.json` Stop hook) preserved.
+
+### Notes — verification
+
+End-to-end smoke verified locally on a synthetic env:
+1. `HOME=/tmp/test bash install.sh` on clean state with no existing goal-mode plugin → produced `~/.claude/plugins/cache/goal-mode/goal-mode/<ver>/`, marketplace dir, known_marketplaces entry with autoUpdate, `enabledPlugins["goal-mode@goal-mode"]: true`. State byte-matches what `/plugin install` produces.
+2. Re-run install.sh on existing install → idempotent (overwrites cache dir with current version, no errors).
+3. `bash install.sh --uninstall` → removes all goal-mode artifacts, restores settings.json `enabledPlugins` to original.
+
+Methodological lesson: v1.1.16 deprecated install.sh based on the false claim "Desktop = embedded CC = can run /plugin install". The correct claim was "Desktop = embedded CC = uses the same plugin LOADER", but `/plugin install` (the slash command) and the loader are different things. The slash command is a CLI-only TUI panel; the loader runs in any environment. install.sh now exploits that distinction by writing directly to the loader's cache location, bypassing the inaccessible CLI command.
+
+[1.1.17]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.17
+
 ## [1.1.16] — 2026-05-10
 
 `install.sh` is deprecated. Single canonical install path now: `/plugin install goal-mode@goal-mode`. Verified via runtime probe that Claude Desktop embeds the same Claude Code binary as the terminal — install.sh's reason for existing ("Desktop can't /plugin install") is false in May 2026.

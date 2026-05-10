@@ -132,11 +132,23 @@ Pick **one** path. Don't run both — they register the Stop hook twice and the 
 
 Verify: `/goal-help` should print the command list.
 
-### Path B — `install.sh` (DEPRECATED in v1.1.16; see below)
+### Path B — `install.sh` for Desktop-only users (no terminal CLI)
 
-Earlier versions assumed Claude Desktop could not run `/plugin install` and shipped a fallback `install.sh` that copied commands to `~/.claude/commands/` and registered a Stop hook in `~/.claude/settings.json`. May 2026 runtime probe of Claude Desktop showed that assumption was wrong: Desktop EMBEDS the same Claude Code binary used in the terminal (`~/Library/Application Support/Claude/claude-code/<ver>/`) and uses the same plugin loader. **Path A works in both Desktop and CLI.** Use Path A.
+`/plugin install`, `/plugin marketplace add`, and `/reload-plugins` are CLI-only slash commands. Their definitions in the embedded Claude Code binary are typed `local-jsx` (interactive panel) and explicitly rejected in non-interactive sessions with "isn't available in this environment. Run it from the Claude Code terminal instead." So in pure-Desktop environments without terminal `claude`, Path A is impossible.
 
-`install.sh` is still in the repo for backward compat (sandboxed environments without `/plugin`, custom workflows). It now prints a deprecation warning, refuses to layer on top of an existing `/plugin install` (would create duplicate commands like `/goal-status` AND `/goal-mode:goal-status` plus double-firing Stop hooks), and waits 5s before continuing. If you previously used `install.sh` AND `/plugin install` together, clean up the duplicates with:
+`install.sh` covers that case. **Since v1.1.17 it deploys to the same plugin cache location as `/plugin install` (`~/.claude/plugins/cache/goal-mode/goal-mode/<ver>/`), registers the marketplace with `autoUpdate: true`, and enables the plugin in settings.json — producing byte-equivalent end state to Path A.** Slash commands appear as `/goal-mode:goal-X` in the picker; no duplicates, no double-firing hooks, no parallel "user-global" path.
+
+```bash
+git clone https://github.com/lokafinnsw/claude-code-goal-mode
+cd claude-code-goal-mode
+bash install.sh
+```
+
+After install, restart Claude Desktop. Plugin loader picks up the cached plugin on next session.
+
+Re-run after `git pull` to refresh the cached version. To uninstall: `bash install.sh --uninstall`.
+
+If you previously used `install.sh` from v1.1.16 or earlier (deployed to `~/.claude/commands/` and added a Stop hook to `settings.json`), clean up the legacy artifacts:
 
 ```bash
 rm -f ~/.claude/commands/goal-*.md
