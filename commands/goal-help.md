@@ -8,7 +8,8 @@ description: "Explain Goal Mode plugin and available commands"
 
 | Command | Description |
 |---|---|
-| `/goal:plan <mission>` | Build a hierarchical plan tree. Lifecycle → draft. |
+| `/goal:plan <mission>` | Build a hierarchical plan tree from scratch (LLM bootstrap). Lifecycle → draft. |
+| `/goal:plan-from-file <path>` | Convert an existing Markdown plan file into the goal-mode schema. Lifecycle → draft. Use this when you already have a plan in Markdown. |
 | `/goal:approve-plan` | Validate the draft and lock it. Lifecycle → approved. |
 | `/goal:start [--max-iter N] [--token-budget N] [--time-budget Nm\|Nh] [--force]` | Begin pursuing. Lifecycle → pursuing. `--force` to overwrite an existing active goal. |
 | `/goal:status` | Show plan tree, cursor, budget, last events. |

@@ -260,6 +260,16 @@ describe('plan-bootstrap.md snapshot render', () => {
   });
 });
 
+describe('plan-from-file.md snapshot render', () => {
+  it('renders against a representative file_path', () => {
+    const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/plan-from-file.md'), 'utf8');
+    const ctx = {
+      file_path: '/Users/example/project/docs/plans/2026-05-09-mvp-roadmap.md',
+    };
+    expect(render(tpl, ctx)).toMatchSnapshot();
+  });
+});
+
 describe('audit-instructions.md snapshot', () => {
   it('renders with criteria, evidence (with nested file/line), and validate', () => {
     const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/audit-instructions.md'), 'utf8');
