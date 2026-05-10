@@ -128,10 +128,14 @@ export function parseTags(text) {
   }
 
   // <audit-verdict agent="x" status="GO">text</audit-verdict>
+  // Status is case-normalised to uppercase: real LLMs emit lowercase ("go") as
+  // often as uppercase ("GO"), and a strict-case match silently drops lowercase
+  // verdicts, hanging the review loop until the 3-NOGO escalation kicks in and
+  // forces lifecycle to "unmet" without a real reason.
   const auditVerdictRe = new RegExp(`<audit-verdict\\b(${ATTRS_REGION})>([\\s\\S]*?)<\\/audit-verdict>`, 'g');
   for (const m of text.matchAll(auditVerdictRe)) {
     const attrs = parseAttrs(m[1]);
-    const status = attrs.status;
+    const status = (attrs.status ?? '').toUpperCase();
     if (!VERDICT_VALUES.has(status)) continue;
     if (!attrs.agent) continue;
     out.push({ kind: 'audit-verdict', agent: attrs.agent, status, text: m[2].trim() });

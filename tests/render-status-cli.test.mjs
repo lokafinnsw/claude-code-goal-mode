@@ -51,7 +51,7 @@ describe('renderStatusReport', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rsr-empty-'));
     const result = renderStatusReport(root);
     expect(result.exit).toBe(0);
-    expect(result.output).toBe('No active goal. Run /goal:plan to start.');
+    expect(result.output).toBe('No active goal. Run /goal-plan to start.');
   });
 
   it('mentions archived goals count when no active goal but archives exist (singular)', () => {
@@ -98,10 +98,56 @@ describe('renderStatusReport', () => {
     expect(result.output).not.toContain('archived goal');
   });
 
-  it('handles missing archive dir gracefully (returns 0 archives, falls through to "Run /goal:plan" message)', () => {
+  it('handles missing archive dir gracefully (returns 0 archives, falls through to "Run /goal-plan" message)', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rsr-no-archive-dir-'));
     // No .claude/goals/archive/ at all.
     const result = renderStatusReport(root);
-    expect(result.output).toBe('No active goal. Run /goal:plan to start.');
+    expect(result.output).toBe('No active goal. Run /goal-plan to start.');
+  });
+
+  // Bug I1 from real-usage testing: if tree.json corrupt, loadTree() renames it
+  // to .broken-<ts>-<seq> and returns null. Old behavior reported "No active
+  // goal" → user runs /goal-plan → state.json overwritten → history lost.
+  // Status display must NOT pretend nothing's there; it must surface the
+  // corruption and tell the user how to recover.
+  it('surfaces corruption when tree.json is unparseable but state.json is intact', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rsr-tree-broken-'));
+    const activeDir = path.join(root, '.claude', 'goals', 'active');
+    fs.mkdirSync(activeDir, { recursive: true });
+    fs.writeFileSync(path.join(activeDir, 'tree.json'), '{ broken json');
+    saveState(root, samplePursuingState());
+
+    const result = renderStatusReport(root);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain('corrupt state');
+    expect(result.output).toContain('Do NOT run /goal-plan');
+    expect(result.output).toMatch(/lifecycle="pursuing"/);
+    expect(result.output).toMatch(/tree\.json forensic copies/);
+  });
+
+  it('surfaces corruption when state.json is unparseable but tree.json is intact', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rsr-state-broken-'));
+    saveTree(root, sampleTree());
+    const activeDir = path.join(root, '.claude', 'goals', 'active');
+    fs.writeFileSync(path.join(activeDir, 'state.json'), '{ broken json');
+
+    const result = renderStatusReport(root);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain('corrupt state');
+    expect(result.output).toContain('Do NOT run /goal-plan or /goal-start');
+    expect(result.output).toContain('Tree preserved');
+  });
+
+  it('surfaces corruption when only forensic copies remain (e.g. user already deleted live tree.json)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rsr-only-forensic-'));
+    const activeDir = path.join(root, '.claude', 'goals', 'active');
+    fs.mkdirSync(activeDir, { recursive: true });
+    fs.writeFileSync(path.join(activeDir, 'tree.json.broken-2026-05-10T00-00-00-000Z-0'), '{ broken');
+    // No live tree.json, no state.json.
+    const result = renderStatusReport(root);
+    expect(result.exit).toBe(0);
+    expect(result.output).toContain('corrupt state');
+    expect(result.output).toContain('forensic copies');
+    expect(result.output).not.toBe('No active goal. Run /goal-plan to start.');
   });
 });

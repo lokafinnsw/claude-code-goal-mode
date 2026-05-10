@@ -61,15 +61,33 @@ if [[ ! -f "$SETTINGS" ]]; then
   echo '{}' > "$SETTINGS"
 fi
 
+# Preflight: validate existing settings.json is parseable. Raw jq parse error
+# leaves an orphan .new file and shows cryptic output; better to fail clean.
+if ! jq -e . "$SETTINGS" >/dev/null 2>&1; then
+  echo "❌ ~/.claude/settings.json is not valid JSON. Refusing to clobber it." >&2
+  echo "   Inspect with: jq . \"$SETTINGS\"" >&2
+  echo "   Fix the parse error manually, then re-run install.sh." >&2
+  exit 1
+fi
+
+# Cleanup any orphan .new file from a previously-failed run.
+rm -f "$SETTINGS.new"
+trap 'rm -f "$SETTINGS.new"' EXIT
+
 cp "$SETTINGS" "$SETTINGS.bak-$(date +%s)"
 echo "→ Backed up existing settings.json"
 
+# MARKER: the Stop hook command embeds the literal string "# goal-mode-installer-managed"
+# as a shell comment so the dedup filter can find prior installations regardless of
+# the user's repo path. v1.1.10 and earlier matched on the substring "goal-mode" in
+# the path, which broke for users who cloned to a directory whose name didn't contain
+# "goal-mode" — re-running install.sh accumulated hook entries.
 jq --arg root "$REPO_ROOT" '
   # Replace any existing goal-mode Stop hook (idempotent).
   #
-  # Filter rule per Stop entry: KEEP if none of its hooks reference "goal-mode".
+  # Filter rule per Stop entry: KEEP if none of its hooks contain the marker.
   #
-  # The naive form `(.hooks // [])[]?.command | contains("goal-mode") | not`
+  # The naive form `(.hooks // [])[]?.command | contains(MARKER) | not`
   # produces ONE boolean PER hook in the entry (because `[]?` iterates).
   # `select(...)` then passes the entry through ONCE PER boolean — so an entry
   # with 3 unrelated hooks gets emitted 3 times. We collapse the multi-value
@@ -77,12 +95,12 @@ jq --arg root "$REPO_ROOT" '
   .hooks = (.hooks // {}) |
   .hooks.Stop = (
     [(.hooks.Stop // [])[] | select(
-      ((.hooks // []) | map(.command // "" | contains("goal-mode")) | any) | not
+      ((.hooks // []) | map(.command // "" | contains("# goal-mode-installer-managed")) | any) | not
     )] +
     [{
       "hooks": [{
         "type": "command",
-        "command": ("CLAUDE_PLUGIN_ROOT=" + $root + " bash \"" + $root + "/hooks/stop-hook.sh\"")
+        "command": ("CLAUDE_PLUGIN_ROOT=" + $root + " bash \"" + $root + "/hooks/stop-hook.sh\" # goal-mode-installer-managed")
       }]
     }]
   ) |

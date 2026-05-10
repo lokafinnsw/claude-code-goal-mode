@@ -1,6 +1,6 @@
 {
   "name": "goal-mode",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "Long-horizon autonomous mode for Claude Code: hierarchical plan-tree (Sprint→Epic→Task) with acceptance criteria, review-gates, and a triple budget. Codex /goal analog.",
   "author": {
     "name": "claude-code-goal-mode contributors",

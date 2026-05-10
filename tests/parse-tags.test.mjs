@@ -68,6 +68,25 @@ describe('parseTags status / blocker / review / verdict', () => {
   it('rejects audit-verdict with unknown status', () => {
     expect(parseTags('<audit-verdict agent="x" status="MEH">x</audit-verdict>')).toEqual([]);
   });
+
+  it('accepts lowercase verdict status (real-world: LLMs often emit "go", "nogo", "revise")', () => {
+    // Bug I2 from real-usage testing: case-sensitive Set lookup silently dropped
+    // lowercase verdicts, hung the review loop, and after 3 NOGO iterations the
+    // engine escalated lifecycle to "unmet" without a real reason.
+    expect(parseTags('<audit-verdict agent="r" status="go">ok</audit-verdict>')).toEqual([
+      { kind: 'audit-verdict', agent: 'r', status: 'GO', text: 'ok' },
+    ]);
+    expect(parseTags('<audit-verdict agent="r" status="nogo">no</audit-verdict>')).toEqual([
+      { kind: 'audit-verdict', agent: 'r', status: 'NOGO', text: 'no' },
+    ]);
+    expect(parseTags('<audit-verdict agent="r" status="Revise">fix</audit-verdict>')).toEqual([
+      { kind: 'audit-verdict', agent: 'r', status: 'REVISE', text: 'fix' },
+    ]);
+  });
+
+  it('drops audit-verdict with empty status (defensive: no crash on attrs.status === undefined)', () => {
+    expect(parseTags('<audit-verdict agent="r">no status</audit-verdict>')).toEqual([]);
+  });
 });
 
 describe('parseTags hardening fix-ups', () => {

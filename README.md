@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/lokafinnsw/claude-code-goal-mode/actions/workflows/ci.yml"><img src="https://github.com/lokafinnsw/claude-code-goal-mode/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <a href="#status"><img src="https://img.shields.io/badge/status-1.0.0-brightgreen.svg" alt="Status"></a>
+  <a href="#status"><img src="https://img.shields.io/github/v/tag/lokafinnsw/claude-code-goal-mode?label=release&color=brightgreen" alt="Latest release"></a>
 </p>
 
 ---

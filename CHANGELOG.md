@@ -4,6 +4,39 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.11] — 2026-05-10
+
+Fixes 4 bugs uncovered by REAL-USAGE-FINDINGS testing (synthetic-fixture run on Darwin arm64, Node 25.9.0). Two Critical, two Important; +5 regression tests.
+
+### Fixed
+
+- **Critical C1: `install.sh` Stop-hook dedup matched on the literal substring "goal-mode" in the repo path**, so users who cloned to a directory whose name did NOT contain "goal-mode" (e.g. `~/devtools/gm-plugin/`) would accumulate Stop-hook entries on every re-run of install.sh. After 3 re-runs that user had 3 duplicated goal-mode entries plus the unrelated ones — every Claude Stop event ran the goal-mode hook 3 times, runaway resource consumption. Fix: inject literal marker comment `# goal-mode-installer-managed` into the hook command string and dedup by marker (path-independent). Bash treats `#` as comment, so the marker has no runtime effect. (`install.sh`)
+
+- **Critical C2: `install.sh` against malformed `~/.claude/settings.json` left an orphan `settings.json.new` file (0 bytes) and exited with raw jq parse error** — no user-facing explanation that the existing settings was the problem, no cleanup, no remediation hint. Fix: preflight `jq -e .` validation BEFORE the transform; if it fails, print actionable error ("Inspect with: jq . $SETTINGS  # to see the parse error location") and exit 1. Add `trap 'rm -f "$SETTINGS.new"' EXIT` to clean up orphan files even on unexpected failures. (`install.sh`)
+
+- **Important I1: `/goal-status` reported "No active goal" when `tree.json` was corrupt but `state.json` was intact** — `loadTree()` renamed corrupt tree to `.broken-<ts>-<seq>` and returned null, falling through to the no-goal message. Tempted user to run `/goal-plan` which OVERWRITES state.json, destroying surviving history. This is a destroy-data path. Fix: new branch in `renderStatusReport` for partial corruption — surfaces "corrupt state" warning, lists forensic copies (up to 3 + count), prints lifecycle/goal_id of preserved state, gives explicit recovery steps, ends with "Do NOT run /goal-plan or /goal-start until tree.json is restored." (`engine/render-status-cli.mjs`)
+
+- **Important I2: `<audit-verdict status="go">` (lowercase) silently dropped** — `VERDICT_VALUES = new Set(['GO', 'NOGO', 'REVISE'])` did strict-case lookup, so real-world LLM lowercase output never registered. Review loop hung; after 3 NOGO iterations the engine escalated lifecycle to "unmet" without a real reason. Fix: `(attrs.status ?? '').toUpperCase()` before Set lookup. Lowercase, mixed-case, and `Revise`/`go`/`nogo` all parse correctly and are stored uppercase in the canonical output. (`engine/parse-tags.mjs`)
+
+- **README staleness: status badge hardcoded `1.0.0` while package.json was at 1.1.10**, failing T1a/T1b doc-staleness regression tests. Fix: switched to dynamic shields.io badge `https://img.shields.io/github/v/tag/lokafinnsw/claude-code-goal-mode?label=release&color=brightgreen` that auto-tracks the latest GitHub tag. No more manual badge bumps per release. (`README.md`)
+
+### Added
+
+- **5 regression tests** locking the I1 + I2 fixes:
+  - `tests/parse-tags.test.mjs`: `accepts lowercase verdict status`, `drops audit-verdict with empty status`. Asserts lowercase `go`/`nogo`/`Revise` produce uppercase `GO`/`NOGO`/`REVISE` in canonical output.
+  - `tests/render-status-cli.test.mjs`: 3 new tests covering tree-corrupt-state-intact, state-corrupt-tree-intact, and only-forensic-copies-remain branches. Each asserts the warning surfaces and the dangerous "No active goal" message is NOT emitted.
+  - Test count: 288 → 293.
+
+### Notes
+
+C1 and C2 are bash-script bugs, end-to-end verified locally:
+- C1: synthetic `/tmp/install-tests/gm-plugin/` (no "goal-mode" in path), 2 install.sh runs against settings.json with 2 unrelated Stop hooks. Result: 3 entries after run 1, still 3 after run 2 (idempotent).
+- C2: synthetic `{ "hooks": { broken` settings.json. Result: clean error message, no orphan .new file, settings.json untouched.
+
+I1 and I2 are JS bugs, locked by the new regression tests above.
+
+[1.1.11]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.11
+
 ## [1.1.10] — 2026-05-10
 
 ### Fixed
