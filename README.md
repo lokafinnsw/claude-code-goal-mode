@@ -160,9 +160,19 @@ If you previously used Path A and now want Path B: `/plugin uninstall goal-mode@
 
 **`/plugin install` fails with "This plugin uses a source type your Claude Code version does not support".**
 
-Likely cause: when you ran `/plugin marketplace add <full-URL>`, your Claude Code version stored the marketplace under `"source": "git"` in `~/.claude/settings.json` → `extraKnownMarketplaces`. The install handler only accepts `github`, `url`, `git-subdir`, `npm` — `git` is a sibling format the validator accepts but the installer doesn't (a known mismatch in the 2.1.x line as of May 2026).
+Likely cause: when you ran `/plugin marketplace add <full-URL>`, your Claude Code version stored the marketplace under `"source": "git"` in `~/.claude/settings.json` → `extraKnownMarketplaces` and `~/.claude/plugins/known_marketplaces.json`. The install handler only accepts `github`, `url`, `git-subdir`, `npm`. `git` is a sibling format the validator accepts but the installer rejects (a known mismatch in the 2.1.121-2.1.138 line as of May 2026).
 
-Fix: open `~/.claude/settings.json`, locate the `extraKnownMarketplaces.goal-mode.source` block, and change it from:
+**One-liner fix** (auto-detects + migrates `git` to `github` in both files; idempotent; backs up originals):
+
+```
+bash <(curl -sL https://raw.githubusercontent.com/lokafinnsw/claude-code-goal-mode/main/scripts/fix-cli-source.sh)
+```
+
+Then `/reload-plugins` (or restart Claude Code) and retry `/plugin install goal-mode@goal-mode`.
+
+**Manual fix** (if you cloned the repo): `bash scripts/fix-cli-source.sh` from the repo root.
+
+**Manual edit** (no curl/script): open `~/.claude/settings.json`, locate `extraKnownMarketplaces.goal-mode.source`, and change it from:
 
 ```json
 "source": {
@@ -180,7 +190,7 @@ to:
 }
 ```
 
-Save, then run `/reload-plugins` (or restart Claude Code) and retry `/plugin install goal-mode@goal-mode`.
+Repeat in `~/.claude/plugins/known_marketplaces.json`. Save, reload, retry.
 
 **Hook errors from other plugins (e.g. `Cannot find module 'zod/v3' from .../claude-mem/...`).**
 

@@ -12,7 +12,11 @@ Your job is to **convert that file into the goal-mode schema**, NOT to design a 
 
 1. **Read the file at `{{file_path}}` completely.** Use the Read tool. Read every line, every heading, every table, every callout. If the file is over 2000 lines, page through it; do not stop at the first page. If it doesn't exist or is empty, abort and tell the user.
 
-2. **DO NOT write a generator script.** The user explicitly forbids this shortcut. Output `tree.json` and `plan.md` DIRECTLY via the Write tool, even if the result is 50KB or 200KB or larger. The Write tool handles large files. Token cost is the cost of the task; do not optimize it away by emitting a Node/Python script that produces template output. Generator scripts lose fidelity with the source plan (they produce regular, templated nodes; the user's plan has irregular, hand-authored nuance per section). If the conversion is large, do it across multiple turns if needed, but every node MUST come from a deep read of the source, not from a loop.
+2. **DO NOT write a generator script. DO NOT hedge about scale.** The user explicitly forbids this shortcut. Output `tree.json` and `plan.md` DIRECTLY via the Write tool, even if the result is 50KB or 200KB or larger. The Write tool handles large files. Token cost is the cost of the task; do not optimize it away by emitting a Node/Python script that produces template output. Generator scripts lose fidelity with the source plan (they produce regular, templated nodes; the user's plan has irregular, hand-authored nuance per section).
+
+   Forbidden phrases in your response: "this is a large Write but doable", "let me write a generator", "given the scale...", "I'll start with a few tasks and continue", "this might take multiple turns". Do not narrate scale concerns. Do not hedge. The user has already accepted the cost of the task by invoking `/goal:plan-from-file` on a 1000+ line file. Just emit the Write calls.
+
+   If the conversion is genuinely too large for one turn, write what fits, save the file, and on the next turn extend it via Edit. Never replace tasks with placeholders like "Task 47: TBD". Every emitted task must be faithful to the source.
 
 3. **The file is the authority.** Do not invent tasks the file does not mention. Do not drop tasks the file does include. The user wrote that plan deliberately; preserve their intent.
 

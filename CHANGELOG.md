@@ -4,6 +4,23 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] — 2026-05-10
+
+### Added
+
+- **`scripts/fix-cli-source.sh`** — auto-detect-and-migrate script for the `"source": "git"` bug in Claude Code 2.1.121-2.1.138's plugin marketplace registry. Scans `~/.claude/settings.json` (`extraKnownMarketplaces.goal-mode.source`) and `~/.claude/plugins/known_marketplaces.json` (`goal-mode.source`); if either has `"source": "git"`, replaces with `{"source": "github", "repo": "lokafinnsw/claude-code-goal-mode"}` and timestamps a backup. Idempotent: re-running on already-migrated files prints "OK ... no change". Touches only the goal-mode entry; other marketplaces preserved. (`scripts/fix-cli-source.sh`)
+- **README troubleshooting one-liner**: `bash <(curl -sL https://raw.githubusercontent.com/lokafinnsw/claude-code-goal-mode/main/scripts/fix-cli-source.sh)` for users hit by the bug who haven't cloned the repo. (`README.md`)
+
+### Fixed
+
+- **`prompts/plan-from-file.md` Hard Rule #2 strengthened with explicit forbidden phrases.** Real failure case from the wild: after the 1.1.4 anti-generator-script fix, the agent stopped writing generators but still hedged ("I'll write tree.json directly. Given the scale (~470 tasks), this is a large Write but doable."). The user reads "doable" as "the agent isn't sure". Fix: prompt now lists forbidden hedging phrases by exact wording ("this is a large Write but doable", "let me write a generator", "given the scale...", "I'll start with a few tasks and continue", "this might take multiple turns") and mandates: "Just emit the Write calls." Also clarifies multi-turn fallback (Edit to extend, never replace tasks with TBD placeholders). (`prompts/plan-from-file.md`, `tests/__snapshots__/continuation.test.mjs.snap`)
+
+### Notes
+
+The `git`-vs-`github`-source-type mismatch is a Claude Code CLI bug. README troubleshooting documented the manual fix in 1.1.3, but a manual edit is friction. v1.1.6 ships an auto-fix script. Once Anthropic patches the validator/installer mismatch upstream, this script can be deprecated.
+
+[1.1.6]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.6
+
 ## [1.1.5] — 2026-05-10
 
 ### Fixed
