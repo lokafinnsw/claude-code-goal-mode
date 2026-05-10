@@ -475,4 +475,38 @@ describe('applyMutations audit persistence', () => {
     const result = applyMutations(tree, state, tags, '2026-05-09T01:00:00.000Z');
     expect(result.tree.root.children[0].status).toBe('achieved');
   });
+
+  it('sanitizes agent and node_id in audit filenames (defensive against user-edited tree)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-sanitize-'));
+    const tree = twoTaskTree();
+    tree.root.children[0].id = 's/t1';  // illegal in filename
+    tree.root.children[0].review = ['art/director'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].evidence = [
+      { ts: 't', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'n' },
+    ];
+    // Cursor is the same id post-sanitization.
+    const state = mkState('s/t1');
+    // Note: cursor with '/' violates GoalStateSchema's min(1) format-only;
+    // walkLeafTasks finds it because the id literal matches. We only test
+    // the filename sanitization, not whether the engine accepts these ids
+    // upstream of validate-plan.
+    const tags = [{ kind: 'audit-verdict', agent: 'art/director', status: 'GO', text: 'ok' }];
+
+    applyMutations(tree, state, tags, '2026-05-09T01:00:00.000Z', {
+      auditsDir: path.join(root, 'audits'),
+    });
+
+    const files = fs.readdirSync(path.join(root, 'audits'));
+    expect(files.length).toBe(1);
+    // Filename should have / replaced with _.
+    expect(files[0]).not.toContain('/');
+    expect(files[0]).toMatch(/^s_t1-/);
+    expect(files[0]).toContain('art_director');
+
+    // Body keeps the original unsanitized values.
+    const body = JSON.parse(fs.readFileSync(path.join(root, 'audits', files[0]), 'utf8'));
+    expect(body.node_id).toBe('s/t1');
+    expect(body.agent).toBe('art/director');
+  });
 });

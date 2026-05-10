@@ -86,6 +86,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findNodeById, nextPendingTaskAfter } from './traversal.mjs';
 
+// Defensive filename sanitization: agent and node_id ultimately come from
+// user-edited tree.json. If they contain '/' or other path-illegal chars,
+// fs.writeFileSync would either fail (ENOENT, missing parent dir) or write
+// to an unintended subdirectory. Sanitization is filename-only — the JSON
+// body keeps the original unsanitized values.
+function safeFilenamePart(s) {
+  return String(s).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 function allCriteriaCovered(node) {
   const covered = new Set();
   for (const ev of node.evidence) {
@@ -166,6 +175,9 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
 
   const verdicts = tags.filter(t => t.kind === 'audit-verdict');
   if (verdicts.length > 0 && cursorNode.status === 'review-pending') {
+    // Hoist mkdirSync out of the per-verdict loop: directory creation is
+    // idempotent but unnecessary work to repeat for every verdict in a batch.
+    if (opts.auditsDir) fs.mkdirSync(opts.auditsDir, { recursive: true });
     for (const v of verdicts) {
       history.push({
         ts, iteration: state.budget.iterations.used,
@@ -175,8 +187,7 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
       // Phase 7: persist verdict to disk when caller wires opts.auditsDir.
       // Written BEFORE the allGo/anyNo gate below so NOGO verdicts persist too.
       if (opts.auditsDir) {
-        fs.mkdirSync(opts.auditsDir, { recursive: true });
-        const fname = `${cursorNode.id}-${ts.replace(/[:.]/g, '-')}-${v.agent}.json`;
+        const fname = `${safeFilenamePart(cursorNode.id)}-${ts.replace(/[:.]/g, '-')}-${safeFilenamePart(v.agent)}.json`;
         const body = {
           ts,
           node_id: cursorNode.id,

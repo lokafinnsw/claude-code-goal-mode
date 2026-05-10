@@ -164,4 +164,24 @@ describe('manualApprove', () => {
     const verdictEvent = newState.history.find(h => h.event === 'review-verdict');
     expect(verdictEvent.iteration).toBe(7);
   });
+
+  it('sanitizes node_id in manual approve audit filename', () => {
+    const tree = sampleTree();
+    tree.root.children[0].id = 's/t1';  // path-illegal char
+    tree.root.children[1].id = 's/t2';
+    const state = sampleState('s/t1');
+    const root = setup(tree, state);
+
+    const result = manualApprove(root, { reason: 'ok' });
+    expect(result.ok).toBe(true);
+
+    const auditFiles = fs.readdirSync(path.join(root, '.claude/goals/active/audits'));
+    expect(auditFiles.length).toBe(1);
+    expect(auditFiles[0]).not.toContain('/');
+    expect(auditFiles[0]).toMatch(/^s_t1-/);
+    expect(auditFiles[0]).toContain('manual');
+
+    const body = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/audits', auditFiles[0]), 'utf8'));
+    expect(body.node_id).toBe('s/t1');
+  });
 });

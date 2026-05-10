@@ -49,6 +49,14 @@ import { loadTree, loadState, saveTree, saveState } from './state.mjs';
 import { findNodeById, nextPendingTaskAfter } from './traversal.mjs';
 import { auditsDir } from './paths.mjs';
 
+// Defensive filename sanitization (mirrors apply-mutations.mjs): node.id
+// comes from user-edited tree.json. If it contains '/' or other path-illegal
+// chars, fs.writeFileSync would fail or write to an unintended subdirectory.
+// Sanitization is filename-only — the JSON body keeps the original value.
+function safeFilenamePart(s) {
+  return String(s).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   const state = loadState(projectRoot);
   if (!state) return { ok: false, error: 'no active goal' };
@@ -69,7 +77,7 @@ export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   const ts = new Date().toISOString();
   const auditDir = auditsDir(projectRoot);
   fs.mkdirSync(auditDir, { recursive: true });
-  const fname = `${node.id}-${ts.replace(/[:.]/g, '-')}-manual.json`;
+  const fname = `${safeFilenamePart(node.id)}-${ts.replace(/[:.]/g, '-')}-manual.json`;
   fs.writeFileSync(
     path.join(auditDir, fname),
     JSON.stringify(
@@ -91,6 +99,12 @@ export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   const next = nextPendingTaskAfter(tree, node.id);
   state.cursor = next ? next.id : node.id;
 
+  // NOTE: manualApprove does NOT increment state.budget.iterations.used.
+  // A manual review is a user action between iterations, not an iteration
+  // of the agent's own work. The recorded `iteration` field tracks the
+  // counter as-of the user's invocation. Compare to applyMutations, which
+  // also doesn't increment (the Stop hook bumps the counter once per turn
+  // before calling applyMutations).
   state.history.push({
     ts,
     iteration: state.budget.iterations.used,
