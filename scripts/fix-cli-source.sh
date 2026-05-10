@@ -104,9 +104,32 @@ migrate_file() {
   esac
 }
 
+enable_auto_update() {
+  local file="$1"      # ~/.claude/plugins/known_marketplaces.json
+  if [[ ! -f "$file" ]]; then return 0; fi
+  local current_auto
+  current_auto=$(jq -r ".\"$MARKETPLACE_NAME\".autoUpdate // false" "$file" 2>/dev/null || echo "false")
+  if [[ "$current_auto" == "true" ]]; then
+    echo "OK: $file already has autoUpdate=true for $MARKETPLACE_NAME (no change)."
+    return 0
+  fi
+  if ! jq -e ".\"$MARKETPLACE_NAME\"" "$file" >/dev/null 2>&1; then
+    echo "SKIP: $file has no $MARKETPLACE_NAME entry; cannot set autoUpdate."
+    return 0
+  fi
+  echo "ENABLING: autoUpdate=true on $file -> $MARKETPLACE_NAME"
+  cp "$file" "$file.bak-autoupdate-$(date +%s)"
+  jq ".\"$MARKETPLACE_NAME\".autoUpdate = true" "$file" > "$file.new"
+  mv "$file.new" "$file"
+  echo "  Now /plugin marketplace will auto-pull latest from GitHub at session start."
+}
+
 echo "=== fix-cli-source: scanning for goal-mode marketplace registrations ==="
 migrate_file "$SETTINGS" ".extraKnownMarketplaces.\"$MARKETPLACE_NAME\".source"
 migrate_file "$KNOWN" ".\"$MARKETPLACE_NAME\".source"
+echo ""
+echo "=== enable autoUpdate ==="
+enable_auto_update "$KNOWN"
 
 echo ""
 echo "=== done ==="

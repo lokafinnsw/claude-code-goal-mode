@@ -150,6 +150,20 @@ What `install.sh` does (idempotent — re-run after `git pull`):
 
 After install, restart Claude Desktop, then `/goal-help` should show the command list.
 
+### Auto-update (no manual `/plugin marketplace update`)
+
+To have Claude Code pull the latest goal-mode from GitHub at every session start, set `autoUpdate: true` for the goal-mode marketplace in `~/.claude/plugins/known_marketplaces.json`. Two ways:
+
+```bash
+# A. one-liner (uses jq):
+jq '."goal-mode".autoUpdate = true' ~/.claude/plugins/known_marketplaces.json | sponge ~/.claude/plugins/known_marketplaces.json
+
+# B. via the maintainer script (also fixes the "git" source bug if present):
+bash <(curl -sL https://raw.githubusercontent.com/lokafinnsw/claude-code-goal-mode/main/scripts/fix-cli-source.sh)
+```
+
+After this, no need to run `/plugin marketplace update goal-mode` per release. Same default that ships with `thedotmack/claude-mem` and other auto-tracked third-party marketplaces.
+
 ### Claude Desktop & Claude Code CLI both work (since v1.1.13)
 
 All 11 commands work in both environments. Earlier versions used `$ARGUMENTS` shell expansion in command markdown which Claude Desktop did not support — v1.1.13 switched to a natural-language pattern where the command markdown instructs the agent to parse the user's typed args and dispatch the script via Bash. The agent does the parsing in either environment.

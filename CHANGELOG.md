@@ -4,6 +4,23 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.14] — 2026-05-10
+
+### Added
+
+- **`fix-cli-source.sh` now also enables `autoUpdate: true`** for the goal-mode marketplace in `~/.claude/plugins/known_marketplaces.json` (idempotent: no change if already true). With autoUpdate on, Claude Code pulls the latest goal-mode from GitHub at every session start — no manual `/plugin marketplace update goal-mode` per release. This is the same default that ships with `thedotmack/claude-mem` and other auto-tracked third-party marketplaces. (`scripts/fix-cli-source.sh`)
+- **README "Auto-update" section** with the one-liner JQ recipe and the `bash <(curl -sL .../fix-cli-source.sh)` path for users who haven't cloned. (`README.md`)
+
+### Notes
+
+End-to-end smoke verified locally on a synthetic `~/.claude/plugins/known_marketplaces.json`:
+- 1st run: detects MISSING autoUpdate, sets it to true, writes timestamped backup.
+- 2nd run: detects true already, no change, no error.
+
+The `autoUpdate` field is per-user and lives only in `~/.claude/plugins/known_marketplaces.json` — it cannot be shipped in the repo's `marketplace.json`. The `fix-cli-source.sh` migration is the deployment path; users who don't run it can use the `jq | sponge` one-liner from the README.
+
+[1.1.14]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.14
+
 ## [1.1.13] — 2026-05-10
 
 Fixes the real Claude Desktop blocker: 6 commands using `$ARGUMENTS` shell expansion in their markdown were silently rejected by Desktop's slash-command parser (regardless of whether the user passed args), making `/goal-start`, `/goal-plan`, `/goal-plan-from-file`, `/goal-approve`, `/goal-abandon`, `/goal-clear` unusable in Desktop. v1.1.12 documented this as a Desktop limitation. v1.1.13 actually fixes it.
