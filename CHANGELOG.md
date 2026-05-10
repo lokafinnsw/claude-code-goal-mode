@@ -4,6 +4,22 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-05-10
+
+### Fixed
+
+- **Bug A (Important)** — `/goal:start` after `/goal:approve-plan` now succeeds without `--force`. The Phase 5.1 hardening M-2 gate ("refuse double-startGoal without --force") was too aggressive — it refused even the canonical post-approval workflow, since `approvePlan` writes a `lifecycle="approved"` state to record the `plan-approved` history event. Fix limits M-2 refusal to non-restartable lifecycles (`pursuing`, `paused`, `achieved`, `unmet`, `budget-limited`); `draft` and `approved` now restart without `--force`. M-2 protection preserved for mid-flight and terminal states. (`engine/start-goal.mjs`)
+
+- **Bug B (Minor latent)** — `safeFilenamePart` (twin in `engine/apply-mutations.mjs` and `engine/manual-approve.mjs`) now collapses runs of 2+ dots to `_`. Previously `..` survived sanitization because `.` was in the allowed character set for filename extensions. No exploit path existed in 1.0.0 (`node_id`/`agent` is always embedded in a larger token), but defense-in-depth against future code paths that may use the sanitized string as a path component.
+
+### Discovered via
+
+User-driven adversarial testing (`tests/adversarial-phases-5-8.test.mjs`, 80 hostile tests covering Phases 5-8 — local-only dev tracker, not in CI). 5 regression tests added to committed test files: 3 in `tests/start-goal.test.mjs` (Bug A acceptance + M-2 preservation), 1 each in `tests/apply-mutations.test.mjs` and `tests/manual-approve.test.mjs` (Bug B traversal-attempt sanitization).
+
+Test count post-fix: 277 → 282 committed tests across 24 files.
+
+[1.0.1]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.0.1
+
 ## [1.0.0] — 2026-05-10
 
 ### Added

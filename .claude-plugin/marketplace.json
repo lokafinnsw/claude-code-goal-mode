@@ -7,7 +7,7 @@
     {
       "name": "goal-mode",
       "source": ".",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "description": "Long-horizon autonomous mode with plan-tree, acceptance criteria, and triple budget."
     }
   ]
