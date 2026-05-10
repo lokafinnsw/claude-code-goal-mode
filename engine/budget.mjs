@@ -58,7 +58,13 @@ export function checkLimits(budget, now = Date.now()) {
     return 'tokens';
   }
   if (budget.wallclock.max_seconds > 0) {
-    const elapsed = (now - new Date(budget.wallclock.started_at).getTime()) / 1000;
+    const wallStart = new Date(budget.wallclock.started_at).getTime();
+    // Corrupt started_at (NaN) is treated as "no wallclock limit" — defensive
+    // (don't crash on corrupt state) but documented behavior so future
+    // readers don't assume the budget always fires. Compare to
+    // wallclockMinutes which clamps to 0 minutes elapsed.
+    if (Number.isNaN(wallStart)) return null;
+    const elapsed = (now - wallStart) / 1000;
     if (elapsed >= budget.wallclock.max_seconds) return 'wallclock';
   }
   return null;

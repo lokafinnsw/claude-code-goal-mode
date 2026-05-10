@@ -149,4 +149,22 @@ describe('checkLimits', () => {
     const b = baseBudget();
     expect(checkLimits(b)).toBeNull();
   });
+
+  it('treats invalid started_at as "no wallclock limit" (defensive against corrupt state)', () => {
+    const b = {
+      iterations: { used: 0, max: 100 },
+      tokens: { used: 0, max: 1000 },
+      wallclock: { started_at: 'not-a-date', max_seconds: 600 },
+    };
+    expect(checkLimits(b)).toBeNull();
+  });
+
+  it('treats empty started_at string as "no wallclock limit"', () => {
+    const b = {
+      iterations: { used: 0, max: 100 },
+      tokens: { used: 0, max: 1000 },
+      wallclock: { started_at: '', max_seconds: 600 },
+    };
+    expect(checkLimits(b)).toBeNull();
+  });
 });
