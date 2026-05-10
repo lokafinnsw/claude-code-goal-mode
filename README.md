@@ -134,7 +134,7 @@ In the meantime, the repo can be cloned and used as a local plugin source for te
 **v1.0.0 — stable.** All foundational phases shipped:
 
 - ✅ Zod schemas + atomic persistence (`engine/state.mjs`)
-- ✅ Pure renderer + 7 prompt templates (`engine/continuation.mjs`, `prompts/`)
+- ✅ Pure renderer + 8 prompt templates (`engine/continuation.mjs`, `prompts/`)
 - ✅ Tag parser + mutation engine (`engine/parse-tags.mjs`, `engine/apply-mutations.mjs`)
 - ✅ Stop-hook orchestrator wiring all of the above (`engine/stop-hook.mjs`)
 - ✅ All 10 slash commands shipped (`commands/`, `engine/*-cli.mjs`)

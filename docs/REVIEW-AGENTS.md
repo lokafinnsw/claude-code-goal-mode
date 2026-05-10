@@ -24,7 +24,7 @@ Concretely:
   to `review-pending` and emits a `review-requested` history event
   (`engine/apply-mutations.mjs:152-155`).
 - On the next iteration, the Stop hook renders
-  `prompts/continuation-review.md` (`engine/stop-hook.mjs:201`) which
+  `prompts/continuation-review.md` (`engine/stop-hook.mjs:202`) which
   instructs the agent to invoke the Agent tool once per reviewer, passing
   the body of `prompts/audit-instructions.md` as the prompt
   (`prompts/continuation-review.md:7-23`).

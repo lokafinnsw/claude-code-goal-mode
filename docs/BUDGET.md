@@ -52,7 +52,7 @@ total += input_tokens + output_tokens + cache_creation_input_tokens
 ```
 
 `cache_read_input_tokens` is **excluded by design**
-(`engine/budget.mjs:11-13`). The reasoning:
+(`engine/budget.mjs:8-10`). The reasoning:
 
 - Cache-read input tokens are billed at a fraction of the input rate
   (Anthropic prices cache reads cheaper than fresh input).

@@ -22,9 +22,9 @@ Initial stable release. The first complete plan-tree goal mode for Claude Code.
 - `engine/budget.mjs` — `tallyTokens` from session JSONL + `checkLimits` triple-budget check.
 - `engine/wallclock.mjs` — shared `wallclockMinutes` helper with NaN-clamp and injectable `now`.
 
-Plus 9 CLI wrappers (`engine/*-cli.mjs`) for the slash commands, all guarded by `import.meta.url ===` for testability.
+Plus 8 CLI wrappers (`engine/*-cli.mjs`) for the slash commands (one wrapper covers `/goal:pause` + `/goal:resume`), all guarded by `import.meta.url ===` for testability.
 
-**Prompts** (7 templates) in `prompts/`:
+**Prompts** (8 templates) in `prompts/`:
 - `continuation.md` — pursuing-turn default.
 - `continuation-review.md` — review-pending turn.
 - `continuation-blocked.md` — blocked-task turn.
@@ -49,7 +49,7 @@ Plus 9 CLI wrappers (`engine/*-cli.mjs`) for the slash commands, all guarded by 
 - `PLAN-FORMAT.md`, `REVIEW-AGENTS.md`, `BUDGET.md`, `ANTI-PATTERNS.md`, `SMOKE-TEST.md`.
 - `EXAMPLES/` — three sample plans (Python migration, Node JWT auth, JS refactor) with corresponding tree.json files; all round-trip through `validatePlan`.
 
-**Test suite**: 442 unit + integration + E2E tests across 26 files. Per-phase E2E suites prove cross-module wiring (Phase 3 parser→mutator, Phase 4 multi-iteration state persistence, Phase 5 lifecycle journey, Phase 6 plan-flow, Phase 7 audit-gate, Phase 8 multi-turn budget, Phase 10 example-plan validation). CI green per commit.
+**Test suite**: 277 unit + integration + E2E tests across 24 files (verified via `npx vitest run --exclude 'tests/adversarial*.mjs'`). Per-phase E2E suites prove cross-module wiring (Phase 3 parser→mutator, Phase 4 multi-iteration state persistence, Phase 5 lifecycle journey, Phase 6 plan-flow, Phase 7 audit-gate, Phase 8 multi-turn budget, Phase 10 example-plan validation). CI green per commit.
 
 ### Notes
 
