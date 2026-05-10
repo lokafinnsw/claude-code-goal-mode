@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "goal_id": "migration-pydantic-v1-v2",
+  "mission": "Migrate codebase from pydantic v1 to v2 with green test suite",
+  "created_at": "2026-05-10T00:00:00.000Z",
+  "approved_at": null,
+  "root": {
+    "id": "sprint-1",
+    "type": "sprint",
+    "title": "Migrate codebase from pydantic v1 to v2",
+    "goal": "All pydantic-using modules compile and pass tests under pydantic v2; no v1-era APIs remain in src/.",
+    "acceptance_criteria": [],
+    "review": [],
+    "validate": null,
+    "work_front": "models",
+    "status": "pending",
+    "evidence": [],
+    "blocker_reason": null,
+    "review_attempts": 0,
+    "notes": [],
+    "children": [
+      {
+        "id": "sprint-1.epic-1",
+        "type": "epic",
+        "title": "Update model definitions",
+        "goal": "Replace v1 BaseModel surface (.dict(), .json(), Config inner class, Field signature changes) with v2 equivalents across all model modules.",
+        "acceptance_criteria": [],
+        "review": [],
+        "validate": null,
+        "work_front": "models",
+        "status": "pending",
+        "evidence": [],
+        "blocker_reason": null,
+        "review_attempts": 0,
+        "notes": [],
+        "children": [
+          {
+            "id": "sprint-1.epic-1.task-1",
+            "type": "task",
+            "title": "Replace .dict() and .json() calls with .model_dump() and .model_dump_json()",
+            "goal": "Every call to the v1 serialization API is rewritten to the v2 method names so models serialize correctly under pydantic 2.x.",
+            "acceptance_criteria": [
+              "grep -rn '\\.dict(' src/ returns zero matches outside of pure-Python dict() constructor calls",
+              "grep -rn '\\.json(' src/ returns zero matches against pydantic models",
+              "All call sites previously using .dict() now use .model_dump() and round-trip with model_validate(model.model_dump())"
+            ],
+            "review": ["python-reviewer", "migration-reviewer"],
+            "validate": "pytest tests/",
+            "work_front": "models",
+            "status": "pending",
+            "evidence": [],
+            "blocker_reason": null,
+            "review_attempts": 0,
+            "notes": [],
+            "children": []
+          },
+          {
+            "id": "sprint-1.epic-1.task-2",
+            "type": "task",
+            "title": "Update Field signatures for v2 (drop deprecated const, swap regex for pattern)",
+            "goal": "All Field(...) declarations use the v2 keyword surface; pydantic emits no DeprecationWarnings for Field arguments during the test run.",
+            "acceptance_criteria": [
+              "grep -rn 'regex=' src/ returns zero matches inside Field(...) calls (replaced with pattern=)",
+              "grep -rn 'const=' src/ returns zero matches inside Field(...) calls",
+              "pytest -W error::DeprecationWarning tests/ exits 0"
+            ],
+            "review": ["python-reviewer"],
+            "validate": "pytest tests/",
+            "work_front": "models",
+            "status": "pending",
+            "evidence": [],
+            "blocker_reason": null,
+            "review_attempts": 0,
+            "notes": [],
+            "children": []
+          },
+          {
+            "id": "sprint-1.epic-1.task-3",
+            "type": "task",
+            "title": "Convert class Config inner classes to model_config = ConfigDict(...)",
+            "goal": "Every model previously declaring an inner Config class now uses the v2 model_config = ConfigDict(...) form with equivalent settings preserved.",
+            "acceptance_criteria": [
+              "grep -rn 'class Config:' src/ returns zero matches in modules that import from pydantic",
+              "Every model that previously had a Config block has a model_config = ConfigDict(...) assignment with the same options carried over (orm_mode -> from_attributes, allow_population_by_field_name -> populate_by_name, etc.)",
+              "pytest tests/ exits 0 with no schema-shape regressions"
+            ],
+            "review": ["python-reviewer", "migration-reviewer"],
+            "validate": "pytest tests/",
+            "work_front": "models",
+            "status": "pending",
+            "evidence": [],
+            "blocker_reason": null,
+            "review_attempts": 0,
+            "notes": [],
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "sprint-1.epic-2",
+        "type": "epic",
+        "title": "Update validators",
+        "goal": "All v1 validator decorators are converted to v2 equivalents and continue to enforce the same invariants on the same fields.",
+        "acceptance_criteria": [],
+        "review": [],
+        "validate": null,
+        "work_front": "validators",
+        "status": "pending",
+        "evidence": [],
+        "blocker_reason": null,
+        "review_attempts": 0,
+        "notes": [],
+        "children": [
+          {
+            "id": "sprint-1.epic-2.task-1",
+            "type": "task",
+            "title": "Convert @validator(...) decorators to @field_validator(...)",
+            "goal": "Each @validator-decorated method is rewritten as a @field_validator classmethod with the same field targets and validation logic.",
+            "acceptance_criteria": [
+              "grep -rn '@validator(' src/ returns zero matches",
+              "Every previously-validated field still has an equivalent @field_validator covering it (verified by the existing validator test cases passing untouched)",
+              "pytest tests/ exits 0 with the same number of validator-related test cases passing as before the migration"
+            ],
+            "review": ["python-reviewer"],
+            "validate": "pytest tests/",
+            "work_front": "validators",
+            "status": "pending",
+            "evidence": [],
+            "blocker_reason": null,
+            "review_attempts": 0,
+            "notes": [],
+            "children": []
+          },
+          {
+            "id": "sprint-1.epic-2.task-2",
+            "type": "task",
+            "title": "Convert @root_validator(...) decorators to @model_validator(mode='after')",
+            "goal": "Cross-field invariants previously enforced by @root_validator now run under @model_validator with the correct mode and return the model instance.",
+            "acceptance_criteria": [
+              "grep -rn '@root_validator' src/ returns zero matches",
+              "Each converted validator returns self (for mode='after') or the values dict (for mode='before') per the v2 contract",
+              "pytest tests/ exits 0 and the cross-field invariant tests still fail when invariants are violated (negative-path coverage preserved)"
+            ],
+            "review": ["python-reviewer", "migration-reviewer"],
+            "validate": "pytest tests/",
+            "work_front": "validators",
+            "status": "pending",
+            "evidence": [],
+            "blocker_reason": null,
+            "review_attempts": 0,
+            "notes": [],
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+}
