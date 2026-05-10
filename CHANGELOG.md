@@ -4,6 +4,18 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] — 2026-05-10
+
+### Added
+
+- **`docs/SMOKE-TEST-PLAN-FROM-FILE.md`** — manual smoke-test recipe for `/goal:plan-from-file` against an edge-case plan. Covers: pick a 1000+ line plan, update plugin to version under test, run conversion, watch for forbidden phrases (full list with v1.1.4 → v1.1.5 → v1.1.6 → v1.1.7 regression history), verify all three files exist + are valid + are non-placeholder, run `/goal:approve-plan` as the structural check, spot-check fidelity by sampling 5 tasks against the source plan. Includes a reference smoke run executed against the user's 1394-line, 9-sprint Mancelot MVP plan (Sprint 0 fully, Sprint 1 fully, Sprint 2 partial; tree.json 297 lines, plan.md 305 lines, state.json 17 lines, both JSONs valid). The unit tests at `tests/continuation.test.mjs` catch prompt-regression at the string level; this recipe catches behavioral regression at the runtime level. (`docs/SMOKE-TEST-PLAN-FROM-FILE.md`)
+
+### Notes
+
+The smoke recipe was added in response to user feedback after a real failure case. Even with v1.1.7's hard mandates, the user's local plugin cache was still running v1.1.4 - the agent showed v1.1.4-era behavior because the version had not been pulled. This recipe makes it explicit that step 2 of the smoke is "update the plugin first", and step 4 is "watch for these specific forbidden phrases", so a reviewer running the smoke catches "your local cache is stale" before blaming the prompt. It also documents the maintainer's reference run as a comparison anchor.
+
+[1.1.8]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.8
+
 ## [1.1.7] — 2026-05-10
 
 ### Fixed
