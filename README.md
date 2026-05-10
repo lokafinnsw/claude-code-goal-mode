@@ -120,15 +120,33 @@ The engine sees opaque strings and dispatches them. Adding goal-mode to a Rust, 
 
 ## Installation
 
-Once published to a marketplace:
+### Claude Code CLI (terminal)
 
 ```bash
-# Inside Claude Code
+# Inside Claude Code CLI:
 /plugin marketplace add https://github.com/lokafinnsw/claude-code-goal-mode
-/plugin install goal-mode
+/plugin install goal-mode@goal-mode
 ```
 
-In the meantime, the repo can be cloned and used as a local plugin source for testing.
+### Claude Desktop / when `/plugin` isn't available
+
+`/plugin install` is CLI-only. Claude Desktop reads `~/.claude/commands/` and `~/.claude/settings.json` directly. The repo ships an `install.sh` that wires goal-mode into both:
+
+```bash
+git clone https://github.com/lokafinnsw/claude-code-goal-mode
+cd claude-code-goal-mode
+bash install.sh
+```
+
+What `install.sh` does (idempotent — re-run after `git pull`):
+1. Runs `npm install` if `node_modules/zod` is missing (engine runtime dep).
+2. Copies `commands/goal-*.md` → `~/.claude/commands/`, replacing `${CLAUDE_PLUGIN_ROOT}` with the repo's absolute path so slash commands resolve without a plugin loader.
+3. Adds the Stop hook to `~/.claude/settings.json` (preserving existing hooks/permissions; backs up original to `settings.json.bak-<ts>`).
+4. Adds path-pinned permissions for the repo's `scripts/*.sh` and `hooks/*.sh`.
+
+After install, restart Claude Desktop / reload the session, then `/goal:help` should show all 11 commands.
+
+Uninstall: `rm ~/.claude/commands/goal-*.md` and remove the goal-mode entries from `~/.claude/settings.json` (or restore from `.bak`).
 
 ## Status
 

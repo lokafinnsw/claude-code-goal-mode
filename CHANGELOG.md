@@ -4,6 +4,19 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-05-10
+
+### Added
+
+- **`install.sh`** — idempotent installer for Claude Desktop and any environment where `/plugin install` is unavailable. Reads the repo path, copies `commands/goal-*.md` to `~/.claude/commands/` with `${CLAUDE_PLUGIN_ROOT}` substituted to absolute paths, registers the Stop hook in `~/.claude/settings.json` with `CLAUDE_PLUGIN_ROOT` env injection, adds path-pinned Bash permissions for the repo's `scripts/*.sh` and `hooks/*.sh`. Backs up existing `settings.json` to `.bak-<ts>` on first run. Re-run after `git pull` to refresh commands. Preserves any existing non-goal-mode Stop hooks (idempotent `jq` filter on `goal-mode` substring in command).
+- **README "Installation" section** — split into "Claude Code CLI" path (`/plugin install`) and "Claude Desktop / when `/plugin` isn't available" path (`bash install.sh`). Documents what `install.sh` does, where state lives, and uninstall.
+
+### Why
+
+`/plugin install goal-mode` only works in Claude Code CLI (terminal app). Claude Desktop and other Claude environments cannot use `/plugin marketplace add`, but they DO read `~/.claude/commands/` for slash commands and `~/.claude/settings.json` for hooks. `install.sh` makes goal-mode work in both worlds via the same user-global config Claude Desktop already honors.
+
+[1.1.1]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.1
+
 ## [1.1.0] — 2026-05-10
 
 ### Added
