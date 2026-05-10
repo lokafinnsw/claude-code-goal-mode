@@ -132,23 +132,16 @@ Pick **one** path. Don't run both — they register the Stop hook twice and the 
 
 Verify: `/goal-help` should print the command list.
 
-### Path B — Claude Desktop / any env without `/plugin`
+### Path B — `install.sh` (DEPRECATED in v1.1.16; see below)
 
-`/plugin install` is CLI-only. Claude Desktop reads `~/.claude/commands/` and `~/.claude/settings.json` directly. The repo ships an `install.sh` that wires goal-mode into both:
+Earlier versions assumed Claude Desktop could not run `/plugin install` and shipped a fallback `install.sh` that copied commands to `~/.claude/commands/` and registered a Stop hook in `~/.claude/settings.json`. May 2026 runtime probe of Claude Desktop showed that assumption was wrong: Desktop EMBEDS the same Claude Code binary used in the terminal (`~/Library/Application Support/Claude/claude-code/<ver>/`) and uses the same plugin loader. **Path A works in both Desktop and CLI.** Use Path A.
+
+`install.sh` is still in the repo for backward compat (sandboxed environments without `/plugin`, custom workflows). It now prints a deprecation warning, refuses to layer on top of an existing `/plugin install` (would create duplicate commands like `/goal-status` AND `/goal-mode:goal-status` plus double-firing Stop hooks), and waits 5s before continuing. If you previously used `install.sh` AND `/plugin install` together, clean up the duplicates with:
 
 ```bash
-git clone https://github.com/lokafinnsw/claude-code-goal-mode
-cd claude-code-goal-mode
-bash install.sh
+rm -f ~/.claude/commands/goal-*.md
+jq '.hooks.Stop = [.hooks.Stop[] | select((.hooks // []) | map(.command // "" | (contains("goal-mode") or contains("claude-code-goal-mode"))) | any | not)]' ~/.claude/settings.json | sponge ~/.claude/settings.json
 ```
-
-What `install.sh` does (idempotent — re-run after `git pull`):
-1. Runs `npm install` if `node_modules/zod` is missing (engine runtime dep).
-2. Copies `commands/goal-*.md` → `~/.claude/commands/`, replacing `${CLAUDE_PLUGIN_ROOT}` with the repo's absolute path so slash commands resolve without a plugin loader.
-3. Adds the Stop hook to `~/.claude/settings.json` (preserving existing hooks/permissions; backs up original to `settings.json.bak-<ts>`).
-4. Adds path-pinned permissions for the repo's `scripts/*.sh` and `hooks/*.sh`.
-
-After install, restart Claude Desktop, then `/goal-help` should show the command list.
 
 ### Auto-update (no manual `/plugin marketplace update`)
 

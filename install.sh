@@ -1,27 +1,55 @@
 #!/usr/bin/env bash
-# install.sh — install goal-mode for Claude Desktop / Claude Code via user-global config.
+# install.sh — DEPRECATED as of v1.1.16. Kept for backward compat only.
 #
-# What this does (idempotent):
-#   1. Copy commands/goal-*.md → ~/.claude/commands/<name>.md, replacing
-#      ${CLAUDE_PLUGIN_ROOT} with this repo's absolute path so the slash
-#      commands resolve without a plugin loader.
-#   2. Add the Stop hook to ~/.claude/settings.json (preserving existing
-#      hooks/permissions/etc.). The hook command injects CLAUDE_PLUGIN_ROOT
-#      so the engine's hooks/stop-hook.sh and CLI wrappers find their files.
-#   3. Add permissions for the repo's scripts/*.sh and hooks/*.sh.
+# Background (May 2026 runtime probe finding):
+#   Claude Desktop EMBEDS the same Claude Code binary used by the terminal
+#   `claude` command (`~/Library/Application Support/Claude/claude-code/<ver>/`)
+#   and uses the same plugin loader, the same `~/.claude/`, the same
+#   settings.json. /plugin install works in BOTH Desktop and CLI.
 #
-# Why not /plugin install? That's CLI-only (terminal app). Claude Desktop
-# does not have /plugin install but DOES read ~/.claude/commands/ and
-# ~/.claude/settings.json. This installer makes goal-mode work in both.
+# So install.sh's reason for existing — "Desktop can't /plugin install" — is
+# false in May 2026. The single canonical install path is:
 #
-# Re-run this script after pulling new commits if commands/* changed.
+#     /plugin marketplace add https://github.com/lokafinnsw/claude-code-goal-mode
+#     /plugin install goal-mode@goal-mode
+#     /reload-plugins
 #
-# Uninstall:
-#   rm ~/.claude/commands/goal-*.md
-#   # And manually remove the Stop hook + Bash permissions from settings.json
-#   # (or restore from the .bak created on first install).
+# Running install.sh on top of /plugin install creates duplicate slash commands
+# (e.g. /goal-status AND /goal-mode:goal-status both appear) and duplicate Stop
+# hooks (settings.json hook + plugin auto-registered hook = double-fire and
+# state mutation per Stop event).
+#
+# If you previously ran install.sh and want to clean up:
+#
+#     rm -f ~/.claude/commands/goal-*.md
+#     jq '.hooks.Stop = [.hooks.Stop[] | select((.hooks // []) | map(.command // "" | (contains("goal-mode") or contains("claude-code-goal-mode"))) | any | not)]' ~/.claude/settings.json | sponge ~/.claude/settings.json
+#
+# This script still functions for users who want the install.sh path despite
+# the warning (e.g. sandboxed environments without /plugin), but emits a
+# deprecation notice and refuses to layer on top of an existing /plugin
+# install (would create duplicates).
 
 set -euo pipefail
+
+# Deprecation warning + duplicate-guard.
+echo "⚠️  install.sh is DEPRECATED as of v1.1.16."
+echo "   Claude Desktop in May 2026 embeds Claude Code and supports /plugin install."
+echo "   Use the canonical path instead:"
+echo "       /plugin marketplace add https://github.com/lokafinnsw/claude-code-goal-mode"
+echo "       /plugin install goal-mode@goal-mode"
+echo "       /reload-plugins"
+echo ""
+if [[ -d "$HOME/.claude/plugins/cache/goal-mode/goal-mode" ]]; then
+  echo "❌ Detected existing /plugin install at ~/.claude/plugins/cache/goal-mode/goal-mode/."
+  echo "   Refusing to layer install.sh on top — would create duplicate slash commands"
+  echo "   and double-firing Stop hooks. To use install.sh path exclusively, first run:"
+  echo "       /plugin uninstall goal-mode@goal-mode"
+  echo "       /plugin marketplace remove goal-mode"
+  echo "   then re-run install.sh."
+  exit 1
+fi
+echo "Continuing with install.sh in 5 seconds (Ctrl-C to abort)..."
+sleep 5
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMMANDS_DIR="$HOME/.claude/commands"

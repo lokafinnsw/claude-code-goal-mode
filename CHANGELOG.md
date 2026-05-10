@@ -4,6 +4,34 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.16] — 2026-05-10
+
+`install.sh` is deprecated. Single canonical install path now: `/plugin install goal-mode@goal-mode`. Verified via runtime probe that Claude Desktop embeds the same Claude Code binary as the terminal — install.sh's reason for existing ("Desktop can't /plugin install") is false in May 2026.
+
+### Changed
+
+- **`install.sh` is DEPRECATED.** Header rewritten to mark deprecated status, prints a deprecation warning on run, refuses to layer on top of an existing `/plugin install` (detects `~/.claude/plugins/cache/goal-mode/goal-mode/` and exits with cleanup instructions), waits 5s before continuing for users who genuinely need it (sandboxed envs without `/plugin`). Existing functionality unchanged for those edge cases. (`install.sh`)
+- **README "Path B" section** rewritten to mark install.sh deprecated, point users at Path A (the `/plugin install` flow), and ship a one-liner cleanup recipe for users who previously layered both paths and now have duplicate slash commands plus double-firing Stop hooks. (`README.md`)
+
+### Background — why this matters
+
+Running `install.sh` AND `/plugin install` together creates two parallel goal-mode installations:
+- `install.sh` deploys `~/.claude/commands/goal-*.md` (slash commands without plugin namespace, e.g. `/goal-status`) plus a `Stop` hook in `~/.claude/settings.json` pointing at the dev repo.
+- `/plugin install` deploys `~/.claude/plugins/cache/goal-mode/goal-mode/<version>/` with namespaced commands (`/goal-mode:goal-status`) and the plugin's own auto-registered Stop hook.
+
+The slash command picker shows BOTH sets, so users see `/goal-status` AND `/goal-mode:goal-status` (visible duplication in the autocomplete list). The Stop hook fires TWICE on every Claude Stop event — once from settings.json, once from the plugin loader — so state.json gets mutated twice per turn (iteration counter, evidence, cursor advances) and history events duplicate. v1.1.11 already detected stop-hook duplication via the `# goal-mode-installer-managed` marker, but only within install.sh's own re-runs — it could not deduplicate across install paths. The right fix is one canonical path.
+
+### Notes
+
+The maintainer's local machine had both paths active simultaneously (visible in the slash command list as `/goal-status` AND `/goal-mode:goal-status`) and three Stop hook entries in settings.json. Cleaned up manually:
+- Removed 11 install.sh-deployed `~/.claude/commands/goal-*.md` files.
+- Filtered out 2 install.sh-managed Stop hook entries from `settings.json` (kept any non-goal-mode hooks if present).
+- Removed dangling `Bash(/Users/.../claude-code-goal-mode/{hooks,scripts}/*.sh:*)` permissions (no longer needed once install.sh hooks are gone — the plugin loader handles its own permission scope).
+
+Result: only `/goal-mode:goal-X` commands appear in the picker, no duplicate Stop hooks. Same behavior, single canonical path.
+
+[1.1.16]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.16
+
 ## [1.1.15] — 2026-05-10
 
 Fixes the last Claude Desktop blocker after v1.1.13: even though the slash command was reaching the script, `start-goal.sh` errored with `CLAUDE_CODE_SESSION_ID env var not set`.
