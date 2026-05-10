@@ -4,6 +4,51 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.18] — 2026-05-10
+
+Replaces v1.1.15's wildcard session_id workaround with a proper transcript-derived real session UUID. Maintains strict session-id matching in stop-hook so multi-session isolation works in both Desktop and CLI without any escape hatch. Source: a second-machine agent on the same project independently identified the same blocker, traced it via instrumented hook to the JSONL transcript directory, and proposed this fix verbatim.
+
+### Fixed
+
+- **`start-goal-cli.mjs` now resolves session_id via transcript dir, not wildcard.** Both CLI's standalone `claude` and Desktop's embedded `claude` write turn-by-turn transcripts to `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`. The basename (sans extension) of the most-recently-modified file in that dir IS the active session UUID — same value Stop-hook stdin delivers as `session_id`. Resolution order: (1) `CLAUDE_CODE_SESSION_ID` env var (set in standalone CLI), (2) transcript dir scan (works in both CLI and Desktop). If neither resolves (very-first-turn case), exits 2 with an actionable hint ("send any message first so a transcript file exists"), not the previous "Desktop unsupported" message. (`engine/start-goal-cli.mjs`)
+
+- **`stop-hook.mjs` mismatch is now visible (was: silent no-op).** The session-id mismatch path used to `return {exit:0, stdout:null}` with no stderr — making it nearly impossible to diagnose when state was started in a different session. v1.1.18 emits `[goal-mode] Stop-hook short-circuit: state.session_id="X" ≠ stdin.session_id="Y". The active goal was started in a different Claude session. To recover, run /goal-mode:goal-clear and re-/goal-mode:goal-start, or jq-patch state.json to set session_id="Y".` Includes both ids and a recovery hint. (`engine/stop-hook.mjs`)
+
+- **Wildcard `"*"` session_id removed from `stop-hook.mjs`.** No longer needed since `start-goal-cli.mjs` always resolves a real UUID. The wildcard was a v1.1.15 workaround that bypassed multi-session isolation; transcript-derived UUIDs preserve isolation in both environments. (`engine/stop-hook.mjs`)
+
+### Tests
+
+- **2 new tests for `deriveSessionIdFromTranscript`**: returns the basename of the most-recently-modified `.jsonl` (with explicit mtime fixtures so the test is deterministic), returns null when no transcripts exist. (`tests/start-goal.test.mjs`)
+- **2 stop-hook tests rewritten**: one asserts strict-match happy path, one asserts mismatch produces stderr diagnostic with both ids + recovery hint (was 3 wildcard tests, removed since wildcard is gone). (`tests/phase-4-multi-iteration.test.mjs`)
+- Test count unchanged at 297. Wildcard tests removed (3); transcript-derive tests added (2); stop-hook stderr test added (1). Net ±0.
+
+### End-to-end smoke verified locally
+
+Synthetic env with realistic `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` layout:
+
+```
+$ unset CLAUDE_CODE_SESSION_ID && bash scripts/start-goal.sh --max-iter 5 ...
+🎯 Goal pursuing — cursor: t, iter budget: 5, token budget: 100000, time budget: 3600s
+(session id resolved from transcript: abc-fake-uuid-xyz)
+Stop-hook is now active. Make your first move on this task.
+
+$ jq .session_id state.json
+"abc-fake-uuid-xyz"
+```
+
+Confirmed:
+1. Without `CLAUDE_CODE_SESSION_ID` env var,
+2. With a synthetic `.jsonl` named `abc-fake-uuid-xyz.jsonl` in the matching project transcript dir,
+3. start-goal-cli derives the UUID and stores it as `state.session_id`.
+
+Stop hook with stdin `session_id="abc-fake-uuid-xyz"` will then strict-match. Stop hook with stdin `session_id="other"` will emit the new stderr diagnostic.
+
+### Credit
+
+Diagnosis and proposed diff came from a second-machine agent on the same project, who instrumented the Stop hook with a probe that logged env vars to verify it actually fired in Desktop, then traced the silent no-op to the session-id mismatch and identified the JSONL transcript dir as the canonical source of the live UUID. The maintainer verified the probe on the first machine independently before adopting the fix. This release is a direct port of that diff with snake_case → camelCase normalisation (the function exports `deriveSessionIdFromTranscript`) and added `deriveSessionIdFromTranscript` is exported for the regression test.
+
+[1.1.18]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.18
+
 ## [1.1.17] — 2026-05-10
 
 Reverses the v1.1.16 deprecation framing of `install.sh` and rewrites it to deploy to the same plugin cache as `/plugin install` — producing byte-equivalent end state.

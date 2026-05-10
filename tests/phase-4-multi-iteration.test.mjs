@@ -243,54 +243,52 @@ describe('Phase 4 multi-iteration end-to-end', () => {
   });
 });
 
-// May 2026 Claude Desktop reverse-engineering finding: Desktop spawns Claude
-// Code as SDK subprocess (CLAUDE_CODE_ENTRYPOINT=sdk-ts) without setting
-// CLAUDE_CODE_SESSION_ID. Our start-goal-cli falls back to "*" wildcard;
-// stop-hook must accept that and process events regardless of incoming
-// stdin.session_id, otherwise goal-mode is unusable in Desktop.
-describe('Desktop / wildcard session_id mode', () => {
-  it('wildcard session_id "*" accepts ANY incoming stdin session_id', async () => {
-    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: '*' });
-    const tPath = writeTranscript(root, 'iter-desktop', 'Progressing.');
+// Strict session-id matching in stop-hook (since v1.1.18, after wildcard
+// approach was replaced with transcript-derived real UUID in start-goal-cli).
+// Both CLI and Desktop now write the same real session UUID into state.json,
+// so strict matching works in both environments. Mismatch now writes stderr
+// diagnostic instead of silently no-op-ing.
+describe('Stop-hook session-id matching (strict)', () => {
+  it('matching session_id processes the Stop event (happy path)', async () => {
+    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: 'real-uuid' });
+    const tPath = writeTranscript(root, 'iter-match', 'Working.');
 
     const result = await runStopHook({
-      stdin: { session_id: 'whatever-desktop-passes', transcript_path: tPath },
-      projectRoot: root,
-    });
-
-    // Wildcard match: hook fires (decision: block + continuation prompt).
-    expect(result.stdout?.decision).toBe('block');
-    const newState = loadState(root);
-    expect(newState.budget.iterations.used).toBe(1);
-  });
-
-  it('strict session_id mismatch still no-ops (CLI multi-session protection preserved)', async () => {
-    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: 'sess-A' });
-    const tPath = writeTranscript(root, 'iter-cli-mismatch', 'Other session.');
-
-    const result = await runStopHook({
-      stdin: { session_id: 'sess-B', transcript_path: tPath },
-      projectRoot: root,
-    });
-
-    // Strict mode: state.session_id !== stdin.session_id → no-op.
-    expect(result.stdout).toBeNull();
-    const newState = loadState(root);
-    // Iteration counter should NOT have advanced.
-    expect(newState.budget.iterations.used).toBe(0);
-  });
-
-  it('strict session_id match still works (CLI happy path)', async () => {
-    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: 'sess-cli' });
-    const tPath = writeTranscript(root, 'iter-cli-match', 'Working.');
-
-    const result = await runStopHook({
-      stdin: { session_id: 'sess-cli', transcript_path: tPath },
+      stdin: { session_id: 'real-uuid', transcript_path: tPath },
       projectRoot: root,
     });
 
     expect(result.stdout?.decision).toBe('block');
     const newState = loadState(root);
     expect(newState.budget.iterations.used).toBe(1);
+  });
+
+  it('mismatched session_id no-ops with stderr diagnostic (was: silent)', async () => {
+    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: 'uuid-A' });
+    const tPath = writeTranscript(root, 'iter-mismatch', 'Other session.');
+
+    // Capture stderr to assert diagnostic message.
+    const origWrite = process.stderr.write.bind(process.stderr);
+    let captured = '';
+    process.stderr.write = (chunk) => { captured += chunk; return true; };
+
+    try {
+      const result = await runStopHook({
+        stdin: { session_id: 'uuid-B', transcript_path: tPath },
+        projectRoot: root,
+      });
+
+      expect(result.stdout).toBeNull();
+      const newState = loadState(root);
+      expect(newState.budget.iterations.used).toBe(0);
+
+      // Diagnostic must surface, not silent.
+      expect(captured).toContain('[goal-mode] Stop-hook short-circuit');
+      expect(captured).toContain('uuid-A');
+      expect(captured).toContain('uuid-B');
+      expect(captured).toContain('jq-patch'); // recovery hint
+    } finally {
+      process.stderr.write = origWrite;
+    }
   });
 });

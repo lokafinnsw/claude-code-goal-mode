@@ -111,10 +111,19 @@ export async function runStopHook({ stdin, projectRoot }) {
 
     const state = loadState(projectRoot);
     if (!state) return { exit: 0, stdout: null };
-    // Session-id matching: strict for CLI (real session_id captured at /goal-start),
-    // wildcard for Desktop (CLAUDE_CODE_SESSION_ID never set in SDK-mode CC).
-    // The wildcard sentinel is "*" (assigned by start-goal-cli when env var unset).
-    if (state.session_id !== '*' && state.session_id !== stdin.session_id) {
+    // Session-id matching: strict in both CLI and Desktop. start-goal-cli now
+    // resolves the session id via env var OR transcript-dir scan, so
+    // state.session_id IS the same UUID Stop-hook stdin delivers in either
+    // environment. Mismatch means the goal was started in a different session
+    // — emit stderr so the misconfiguration is visible (the previous silent
+    // no-op made this very hard to diagnose).
+    if (stdin.session_id && state.session_id !== stdin.session_id) {
+      process.stderr.write(
+        `[goal-mode] Stop-hook short-circuit: state.session_id="${state.session_id}" ` +
+        `≠ stdin.session_id="${stdin.session_id}". The active goal was started in a different ` +
+        `Claude session. To recover, run /goal-mode:goal-clear and re-/goal-mode:goal-start, ` +
+        `or jq-patch state.json to set session_id="${stdin.session_id}".\n`,
+      );
       return { exit: 0, stdout: null };
     }
     if (state.lifecycle !== 'pursuing') return { exit: 0, stdout: null };

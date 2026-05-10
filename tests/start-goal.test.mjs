@@ -200,25 +200,52 @@ describe('startGoal post-1.0.0 hardening (Bug A — restartable lifecycles)', ()
     }
   });
 
-  // Bug from May 2026 reverse-engineering of Claude Desktop:
-  // Desktop spawns Claude Code with CLAUDE_CODE_ENTRYPOINT=sdk-ts and never
-  // sets CLAUDE_CODE_SESSION_ID. start-goal-cli falls back to "*" (wildcard);
-  // this test verifies the engine accepts that and stores it.
-  it('accepts wildcard "*" sessionId (Desktop / no-CLI-session mode)', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-wild-'));
-    saveTree(root, approvedTree());
-    fs.writeFileSync(
-      path.join(root, '.claude/goals/active/state.json'),
-      JSON.stringify({
-        schema_version: 1, goal_id: 'g', lifecycle: 'approved', cursor: 'pending',
-        budget: { iterations: { used: 0, max: 0 }, tokens: { used: 0, max: 0 }, wallclock: { started_at: '2026-05-09T00:00:00.000Z', max_seconds: 0 } },
-        session_id: 'pending', started_at: null, paused_at: null, ended_at: null, ended_reason: null, history: [],
-      }, null, 2),
-    );
-    const result = startGoal(root, { sessionId: '*', maxIter: 100, tokenBudget: 1_000_000, timeBudgetSeconds: 7200 });
-    expect(result.ok).toBe(true);
-    const state = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
-    expect(state.session_id).toBe('*');
-    expect(state.lifecycle).toBe('pursuing');
+});
+
+// May 2026 finding: Desktop's embedded Claude Code subprocess does not export
+// CLAUDE_CODE_SESSION_ID; the session id propagates as `--resume <uuid>` CLI
+// arg. start-goal-cli derives the UUID by scanning ~/.claude/projects/<encoded
+// -cwd>/ for the most-recent .jsonl file (its basename = session UUID). Same
+// dir is written by both CLI and Desktop, so this works in both environments.
+describe('deriveSessionIdFromTranscript (Desktop & CLI session-id source)', () => {
+  it('returns the basename of the most-recently-modified .jsonl', async () => {
+    const { deriveSessionIdFromTranscript } = await import('../engine/start-goal-cli.mjs');
+    // Synthetic project transcript dir.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-deriv-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-'));
+    const encoded = '-' + cwd.replace(/^\//, '').replace(/\//g, '-');
+    const dir = path.join(home, '.claude', 'projects', encoded);
+    fs.mkdirSync(dir, { recursive: true });
+    // Two transcripts, set explicit mtimes so the test is deterministic.
+    const oldUuid = '00000000-old0-0000-0000-000000000000';
+    const newUuid = '11111111-new1-1111-1111-111111111111';
+    fs.writeFileSync(path.join(dir, `${oldUuid}.jsonl`), '');
+    const oldTime = new Date('2026-05-09T00:00:00Z');
+    fs.utimesSync(path.join(dir, `${oldUuid}.jsonl`), oldTime, oldTime);
+    fs.writeFileSync(path.join(dir, `${newUuid}.jsonl`), '');
+    const newTime = new Date('2026-05-10T12:00:00Z');
+    fs.utimesSync(path.join(dir, `${newUuid}.jsonl`), newTime, newTime);
+
+    // os.homedir()-based lookup; rebind via env override.
+    const origHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      expect(deriveSessionIdFromTranscript(cwd)).toBe(newUuid);
+    } finally {
+      process.env.HOME = origHome;
+    }
+  });
+
+  it('returns null when no transcripts exist', async () => {
+    const { deriveSessionIdFromTranscript } = await import('../engine/start-goal-cli.mjs');
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-deriv-empty-'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-empty-'));
+    const origHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      expect(deriveSessionIdFromTranscript(cwd)).toBeNull();
+    } finally {
+      process.env.HOME = origHome;
+    }
   });
 });
