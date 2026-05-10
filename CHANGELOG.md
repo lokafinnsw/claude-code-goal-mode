@@ -4,6 +4,29 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-05-10
+
+### Fixed
+
+- **`/plugin install goal-mode@goal-mode` failed with "This plugin uses a source type your Claude Code version does not support"**. Root cause: `marketplace.json` had `"source": "."` — a self-referential string source that the May 2026 Claude Code marketplace schema does not accept. Per the official schema (https://code.claude.com/docs/en/plugin-marketplaces), valid sources are either a relative subdirectory string (`"./plugins/foo"`) OR an object like `{"source": "github", "repo": "owner/repo"}`. Fix: switched to GitHub source. The plugin loader now clones from https://github.com/lokafinnsw/claude-code-goal-mode at install time. (`marketplace.json`)
+
+- **Vendored `node_modules/zod`** to make the plugin self-contained. Claude Code does not run `npm install` when cloning a plugin into `~/.claude/plugins/cache/`, but `engine/state.mjs` imports `zod` at runtime — so without vendoring the engine would crash on first Stop hook invocation with `Cannot find module 'zod'`. Other deps (vitest, etc.) remain `.gitignore`'d as they're devDependencies. Adds ~5 MB / 596 files to the repo, but eliminates a class of post-install failures and makes `/plugin install` work cleanly. (`.gitignore`, `node_modules/zod/`)
+
+### Notes
+
+This release un-breaks the Claude Code CLI install path that 1.0.0–1.1.1 had silently broken (the marketplace schema required objects-or-subdirs since some earlier Claude Code release). Existing users who installed via `install.sh` (Claude Desktop path) are unaffected.
+
+To re-install after this fix:
+
+```
+/plugin marketplace update goal-mode  # if you previously added it
+# or, fresh:
+/plugin marketplace add https://github.com/lokafinnsw/claude-code-goal-mode
+/plugin install goal-mode@goal-mode
+```
+
+[1.1.2]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.2
+
 ## [1.1.1] — 2026-05-10
 
 ### Added

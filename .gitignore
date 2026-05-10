@@ -1,4 +1,9 @@
-node_modules/
+# Vendor zod for self-contained /plugin install. Claude Code does not run
+# `npm install` when it clones the plugin into ~/.claude/plugins/cache/, but
+# engine/state.mjs imports zod at runtime — so we commit just zod.
+# Other deps (vitest, etc.) stay ignored — they're devDependencies.
+node_modules/*
+!node_modules/zod
 .DS_Store
 *.log
 .vitest-cache/
