@@ -4,6 +4,31 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] — 2026-05-10
+
+### Fixed
+
+- **`install.sh` jq filter triplicated existing Stop hooks.** Real failure case from a fresh install: user had one Stop entry containing 3 unrelated hooks (cmux-notify, landing-the-plane, audit-on-completion). After running install.sh, settings.json had FOUR Stop entries — the original got triplicated and the goal-mode entry was appended. Reason: the filter `(.hooks // [])[]?.command | contains("goal-mode") | not` produces ONE boolean PER hook in the entry (because `[]?` iterates the inner hooks array), and `select(...)` then passes the entry through ONCE PER boolean. With 3 unrelated hooks, the entry passed through `select` 3 times. Fix: collapse the multi-value stream into a single boolean via `((.hooks // []) | map(.command // "" | contains("goal-mode")) | any) | not`. Verified: idempotent across N runs, edge cases pass (empty Stop array, missing hooks key, existing goal-mode entry replaced regardless of `CLAUDE_PLUGIN_ROOT` path). Inline comment in install.sh documents why the naive form is wrong. (`install.sh`)
+
+### Recovery for users hit by the bug in 1.1.0–1.1.4
+
+If you ran `bash install.sh` from one of those versions and your `~/.claude/settings.json` now has multiple identical Stop entries:
+
+```bash
+# Inspect:
+jq '.hooks.Stop | length' ~/.claude/settings.json   # >1 with same hooks = corrupted
+
+# Restore from the timestamped backup install.sh created on first install:
+ls -1t ~/.claude/settings.json.bak-* | head -1   # most-recent pre-install state
+# Inspect that backup, then if it looks correct:
+cp <backup-path> ~/.claude/settings.json
+
+# Re-run install.sh from this 1.1.5+ release:
+bash install.sh
+```
+
+[1.1.5]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.5
+
 ## [1.1.4] — 2026-05-10
 
 ### Added

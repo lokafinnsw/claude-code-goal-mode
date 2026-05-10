@@ -66,10 +66,18 @@ echo "→ Backed up existing settings.json"
 
 jq --arg root "$REPO_ROOT" '
   # Replace any existing goal-mode Stop hook (idempotent).
+  #
+  # Filter rule per Stop entry: KEEP if none of its hooks reference "goal-mode".
+  #
+  # The naive form `(.hooks // [])[]?.command | contains("goal-mode") | not`
+  # produces ONE boolean PER hook in the entry (because `[]?` iterates).
+  # `select(...)` then passes the entry through ONCE PER boolean — so an entry
+  # with 3 unrelated hooks gets emitted 3 times. We collapse the multi-value
+  # stream with `map(...) | any` so `select` runs exactly once per entry.
   .hooks = (.hooks // {}) |
   .hooks.Stop = (
     [(.hooks.Stop // [])[] | select(
-      (.hooks // [])[]?.command // "" | contains("goal-mode") | not
+      ((.hooks // []) | map(.command // "" | contains("goal-mode")) | any) | not
     )] +
     [{
       "hooks": [{
