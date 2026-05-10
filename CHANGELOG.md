@@ -4,6 +4,23 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] — 2026-05-10
+
+### Fixed
+
+- **`marketplace.json` plugin source switched from `url` (with sha pin) to `url` (no sha)**. The pinned-sha form locked installs to the v1.1.2 commit forever, so users could never receive `/plugin marketplace update` improvements. Dropping the sha lets the plugin loader pull the latest `main` on every marketplace update — at the cost of pinning, gained "this is the same workflow `claude-plugins-official` plugins use." (`marketplace.json`)
+
+### Documentation
+
+- **README "Installation" rewrite**. Explicit Path A (CLI) vs Path B (Desktop) sections, with a "pick one — don't run both" warning (running both registers the Stop hook twice and the engine double-mutates state). Added "Switching between paths" with the two cleanup recipes. (`README.md`)
+- **README "Troubleshooting" section added**. Documents the `git` vs `github` source-type pitfall in `~/.claude/settings.json` → `extraKnownMarketplaces`: when a user runs `/plugin marketplace add <https-URL-with-.git-suffix>`, some Claude Code 2.1.x versions store the marketplace as `"source": "git"`, which the installer rejects with "source type not supported" even though `marketplace add` accepts it. The fix is a manual edit to `"source": "github"` + `"repo"`. Also documents the unrelated-hook-error noise users may see (e.g. `claude-mem` `zod/v3` missing) and how to silence it. (`README.md`)
+
+### Notes
+
+The `git`-vs-`github`-source mismatch is a real bug in Claude Code 2.1.121–2.1.138 — the marketplace-add validator accepts `["github","git","url","settings"]` but the install switch only handles `["npm","github","url","git-subdir"]`. Reported via in-CLI testing on 2026-05-10.
+
+[1.1.3]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.3
+
 ## [1.1.2] — 2026-05-10
 
 ### Fixed

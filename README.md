@@ -120,15 +120,19 @@ The engine sees opaque strings and dispatches them. Adding goal-mode to a Rust, 
 
 ## Installation
 
-### Claude Code CLI (terminal)
+Pick **one** path. Don't run both — they register the Stop hook twice and the engine will double-mutate state.
 
-```bash
-# Inside Claude Code CLI:
+### Path A — Claude Code CLI (terminal app)
+
+```
 /plugin marketplace add https://github.com/lokafinnsw/claude-code-goal-mode
 /plugin install goal-mode@goal-mode
+/reload-plugins
 ```
 
-### Claude Desktop / when `/plugin` isn't available
+Verify: `/goal:help` should print the command list.
+
+### Path B — Claude Desktop / any env without `/plugin`
 
 `/plugin install` is CLI-only. Claude Desktop reads `~/.claude/commands/` and `~/.claude/settings.json` directly. The repo ships an `install.sh` that wires goal-mode into both:
 
@@ -144,9 +148,43 @@ What `install.sh` does (idempotent — re-run after `git pull`):
 3. Adds the Stop hook to `~/.claude/settings.json` (preserving existing hooks/permissions; backs up original to `settings.json.bak-<ts>`).
 4. Adds path-pinned permissions for the repo's `scripts/*.sh` and `hooks/*.sh`.
 
-After install, restart Claude Desktop / reload the session, then `/goal:help` should show all 11 commands.
+After install, restart Claude Desktop, then `/goal:help` should show the command list.
 
-Uninstall: `rm ~/.claude/commands/goal-*.md` and remove the goal-mode entries from `~/.claude/settings.json` (or restore from `.bak`).
+### Switching between paths
+
+If you previously used Path B and now want Path A: `rm ~/.claude/commands/goal-*.md` and delete the goal-mode Stop-hook entry from `~/.claude/settings.json` (or restore from a `.bak`). Then run Path A.
+
+If you previously used Path A and now want Path B: `/plugin uninstall goal-mode@goal-mode`, then run Path B.
+
+### Troubleshooting
+
+**`/plugin install` fails with "This plugin uses a source type your Claude Code version does not support".**
+
+Likely cause: when you ran `/plugin marketplace add <full-URL>`, your Claude Code version stored the marketplace under `"source": "git"` in `~/.claude/settings.json` → `extraKnownMarketplaces`. The install handler only accepts `github`, `url`, `git-subdir`, `npm` — `git` is a sibling format the validator accepts but the installer doesn't (a known mismatch in the 2.1.x line as of May 2026).
+
+Fix: open `~/.claude/settings.json`, locate the `extraKnownMarketplaces.goal-mode.source` block, and change it from:
+
+```json
+"source": {
+  "source": "git",
+  "url": "https://github.com/lokafinnsw/claude-code-goal-mode.git"
+}
+```
+
+to:
+
+```json
+"source": {
+  "source": "github",
+  "repo": "lokafinnsw/claude-code-goal-mode"
+}
+```
+
+Save, then run `/reload-plugins` (or restart Claude Code) and retry `/plugin install goal-mode@goal-mode`.
+
+**Hook errors from other plugins (e.g. `Cannot find module 'zod/v3' from .../claude-mem/...`).**
+
+Unrelated to goal-mode — they're failing hooks from a different plugin. They show up because hooks run on every prompt/Stop. To silence them, set the offending plugin to `false` in `~/.claude/settings.json` → `enabledPlugins` and `/reload-plugins`.
 
 ## Status
 
