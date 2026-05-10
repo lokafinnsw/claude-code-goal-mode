@@ -242,3 +242,55 @@ describe('Phase 4 multi-iteration end-to-end', () => {
     expect(noteLines.length).toBe(5);
   });
 });
+
+// May 2026 Claude Desktop reverse-engineering finding: Desktop spawns Claude
+// Code as SDK subprocess (CLAUDE_CODE_ENTRYPOINT=sdk-ts) without setting
+// CLAUDE_CODE_SESSION_ID. Our start-goal-cli falls back to "*" wildcard;
+// stop-hook must accept that and process events regardless of incoming
+// stdin.session_id, otherwise goal-mode is unusable in Desktop.
+describe('Desktop / wildcard session_id mode', () => {
+  it('wildcard session_id "*" accepts ANY incoming stdin session_id', async () => {
+    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: '*' });
+    const tPath = writeTranscript(root, 'iter-desktop', 'Progressing.');
+
+    const result = await runStopHook({
+      stdin: { session_id: 'whatever-desktop-passes', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    // Wildcard match: hook fires (decision: block + continuation prompt).
+    expect(result.stdout?.decision).toBe('block');
+    const newState = loadState(root);
+    expect(newState.budget.iterations.used).toBe(1);
+  });
+
+  it('strict session_id mismatch still no-ops (CLI multi-session protection preserved)', async () => {
+    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: 'sess-A' });
+    const tPath = writeTranscript(root, 'iter-cli-mismatch', 'Other session.');
+
+    const result = await runStopHook({
+      stdin: { session_id: 'sess-B', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    // Strict mode: state.session_id !== stdin.session_id → no-op.
+    expect(result.stdout).toBeNull();
+    const newState = loadState(root);
+    // Iteration counter should NOT have advanced.
+    expect(newState.budget.iterations.used).toBe(0);
+  });
+
+  it('strict session_id match still works (CLI happy path)', async () => {
+    const { root } = setupProject(twoTaskTree(), { ...pursuingState(), session_id: 'sess-cli' });
+    const tPath = writeTranscript(root, 'iter-cli-match', 'Working.');
+
+    const result = await runStopHook({
+      stdin: { session_id: 'sess-cli', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    expect(result.stdout?.decision).toBe('block');
+    const newState = loadState(root);
+    expect(newState.budget.iterations.used).toBe(1);
+  });
+});

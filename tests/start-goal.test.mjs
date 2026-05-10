@@ -199,4 +199,26 @@ describe('startGoal post-1.0.0 hardening (Bug A — restartable lifecycles)', ()
       expect(state.lifecycle).toBe(lifecycle);
     }
   });
+
+  // Bug from May 2026 reverse-engineering of Claude Desktop:
+  // Desktop spawns Claude Code with CLAUDE_CODE_ENTRYPOINT=sdk-ts and never
+  // sets CLAUDE_CODE_SESSION_ID. start-goal-cli falls back to "*" (wildcard);
+  // this test verifies the engine accepts that and stores it.
+  it('accepts wildcard "*" sessionId (Desktop / no-CLI-session mode)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-wild-'));
+    saveTree(root, approvedTree());
+    fs.writeFileSync(
+      path.join(root, '.claude/goals/active/state.json'),
+      JSON.stringify({
+        schema_version: 1, goal_id: 'g', lifecycle: 'approved', cursor: 'pending',
+        budget: { iterations: { used: 0, max: 0 }, tokens: { used: 0, max: 0 }, wallclock: { started_at: '2026-05-09T00:00:00.000Z', max_seconds: 0 } },
+        session_id: 'pending', started_at: null, paused_at: null, ended_at: null, ended_reason: null, history: [],
+      }, null, 2),
+    );
+    const result = startGoal(root, { sessionId: '*', maxIter: 100, tokenBudget: 1_000_000, timeBudgetSeconds: 7200 });
+    expect(result.ok).toBe(true);
+    const state = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(state.session_id).toBe('*');
+    expect(state.lifecycle).toBe('pursuing');
+  });
 });

@@ -164,11 +164,14 @@ bash <(curl -sL https://raw.githubusercontent.com/lokafinnsw/claude-code-goal-mo
 
 After this, no need to run `/plugin marketplace update goal-mode` per release. Same default that ships with `thedotmack/claude-mem` and other auto-tracked third-party marketplaces.
 
-### Claude Desktop & Claude Code CLI both work (since v1.1.13)
+### Claude Desktop & Claude Code CLI both work (since v1.1.15)
 
-All 11 commands work in both environments. Earlier versions used `$ARGUMENTS` shell expansion in command markdown which Claude Desktop did not support — v1.1.13 switched to a natural-language pattern where the command markdown instructs the agent to parse the user's typed args and dispatch the script via Bash. The agent does the parsing in either environment.
+All 11 commands AND the autonomous Stop-hook continuation loop work in both environments. Two fixes shipped to make this true:
 
-So `/goal-start --max-iter 800 --token-budget 20000000 --time-budget 24h` works the same way in Desktop and in CLI.
+- **v1.1.13** — switched 6 argument-bearing commands from `$ARGUMENTS` shell expansion (CLI-only) to a natural-language pattern (works in both). The command markdown now instructs the agent to parse the user's typed args and dispatch the script via Bash. Same `/goal-start --max-iter 800` typed text works in either environment.
+- **v1.1.15** — fixed the autonomous loop in Desktop. Reverse-engineering the Claude Desktop binary (May 2026) confirmed Desktop spawns Claude Code as SDK subprocess with `CLAUDE_CODE_ENTRYPOINT=sdk-ts` and never sets `CLAUDE_CODE_SESSION_ID`. Our `start-goal-cli` previously errored when the env var was unset. v1.1.15: if env var unset, fall back to `session_id="*"` (wildcard) which the Stop hook accepts as match-anything. Trade-off: if you run multiple Claude sessions of the same project simultaneously while a goal is active, all of them drive the goal — which is fine for single-user setups but loses multi-CLI-session isolation. CLI users with a real session_id keep strict matching as before.
+
+So `/goal-start --max-iter 800 --token-budget 20000000 --time-budget 24h` and the autonomous continuation loop both work the same way in Desktop and in CLI.
 
 ### Switching between paths
 

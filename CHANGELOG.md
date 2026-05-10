@@ -4,6 +4,41 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.15] — 2026-05-10
+
+Fixes the LAST Claude Desktop blocker discovered after v1.1.13: even though the slash command was now reaching the script, `start-goal.sh` errored with `CLAUDE_CODE_SESSION_ID env var not set`. Reverse-engineering Desktop binary (May 2026) confirmed why: Desktop spawns Claude Code as SDK subprocess with `CLAUDE_CODE_ENTRYPOINT=sdk-ts` and never sets that env var.
+
+### Fixed
+
+- **`/goal-start` now works in Claude Desktop without `CLAUDE_CODE_SESSION_ID`.** Reverse-engineering finding (extracting Desktop's `app.asar` and grepping the CC binary): Desktop spawns CC with `spawnClaudeCode(...,{env:{...,CLAUDE_CODE_ENTRYPOINT:"sdk-ts"}})` (the SDK code path), and CC's session-id init is conditional: `if(process.env.CLAUDE_CODE_SESSION_ID) process.env.CLAUDE_CODE_SESSION_ID = Z_();` — only re-sets if already set. Desktop never sets it, so SDK-mode CC has no session_id, and bash subprocesses spawned by slash commands inherit nothing. Fix: `start-goal-cli.mjs` falls back to `session_id="*"` (wildcard) when the env var is unset, prints a notice telling the user the goal is in Desktop / no-session mode, and stores the wildcard in state.json. (`engine/start-goal-cli.mjs`)
+
+- **Stop hook session-id matching now treats `"*"` as "match any incoming stdin.session_id".** Previously `state.session_id !== stdin.session_id` was a strict no-op for any mismatch — which meant Desktop hooks with random stdin session_ids never advanced the cursor. v1.1.15: wildcard sentinel bypasses the strict check while preserving multi-CLI-session protection (real session_ids still match strictly). (`engine/stop-hook.mjs`)
+
+### Added
+
+- **4 regression tests for wildcard mode:**
+  - `tests/start-goal.test.mjs`: `accepts wildcard "*" sessionId (Desktop / no-CLI-session mode)` — verifies engine accepts `"*"` and stores it.
+  - `tests/phase-4-multi-iteration.test.mjs`: 3 tests in new "Desktop / wildcard session_id mode" describe block:
+    - wildcard accepts ANY incoming stdin session_id (Desktop happy path).
+    - strict mismatch still no-ops (CLI multi-session protection preserved).
+    - strict match still works (CLI happy path).
+  - Test count: 293 → 297.
+
+### Changed
+
+- **README "Claude Desktop & Claude Code CLI both work" section** updated. Was: "since v1.1.13" with only the slash-command fix. Now: documents both v1.1.13 (slash-command parser) and v1.1.15 (autonomous continuation loop). Explicit about the wildcard trade-off for multi-session usage.
+
+### Notes
+
+End-to-end smoke verified locally:
+1. `unset CLAUDE_CODE_SESSION_ID && bash scripts/start-goal.sh --max-iter 800 --token-budget 20000000 --time-budget 24h` → succeeds. Output: `🎯 Goal pursuing — cursor: ...` + `(Running in Desktop / no-session mode — all Claude sessions in this project will drive this goal.)` + `Stop-hook is now active.`
+2. State: `lifecycle: pursuing`, `session_id: "*"`, `cursor: <first task>`.
+3. `cat synthetic-stop-input.json | bash hooks/stop-hook.sh` (with stdin.session_id="random-desktop-id-xyz" — totally different from state's "*") → cursor advances, evidence applied, history grows. The Stop-hook pipeline runs end-to-end as if in CLI.
+
+The reverse-engineering trail is preserved in the inline comments in `start-goal-cli.mjs` and `stop-hook.mjs` so a future maintainer doesn't have to re-extract `app.asar`.
+
+[1.1.15]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.15
+
 ## [1.1.14] — 2026-05-10
 
 ### Added

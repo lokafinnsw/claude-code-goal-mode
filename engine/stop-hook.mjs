@@ -111,7 +111,12 @@ export async function runStopHook({ stdin, projectRoot }) {
 
     const state = loadState(projectRoot);
     if (!state) return { exit: 0, stdout: null };
-    if (state.session_id !== stdin.session_id) return { exit: 0, stdout: null };
+    // Session-id matching: strict for CLI (real session_id captured at /goal-start),
+    // wildcard for Desktop (CLAUDE_CODE_SESSION_ID never set in SDK-mode CC).
+    // The wildcard sentinel is "*" (assigned by start-goal-cli when env var unset).
+    if (state.session_id !== '*' && state.session_id !== stdin.session_id) {
+      return { exit: 0, stdout: null };
+    }
     if (state.lifecycle !== 'pursuing') return { exit: 0, stdout: null };
 
     const tree = loadTree(projectRoot);
