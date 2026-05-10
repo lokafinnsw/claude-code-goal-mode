@@ -136,7 +136,92 @@ The `notes.md` should have one line per iteration ending in `lifecycle=achieved`
 
 Verify the archive contains `tree.json` + `state.json` and `.claude/goals/active/` is gone.
 
-### 9. (Optional) Pause / resume / abandon paths
+### 9. (Optional) Review-gate flow with `/goal:approve`
+
+For tasks with non-empty `review[]`, the Stop hook puts the cursor into `review-pending` after the agent emits `<task-status>achieved</task-status>` + `<review-request agents="..." />`. From there, the agent is expected to invoke the named reviewer agents via the `Agent` tool, collect `<audit-verdict>` tags, and re-submit. If a required reviewer is unavailable in the user's environment, the user can manually override via `/goal:approve`.
+
+#### Recipe variant: review-required task
+
+Replace the tree.json's task definition with one that requires a review:
+
+```bash
+mkdir -p /tmp/goal-review-smoke && cd /tmp/goal-review-smoke
+git init
+mkdir -p .claude/goals/active
+cat > .claude/goals/active/tree.json <<'EOF'
+{
+  "schema_version": 1,
+  "goal_id": "review-smoke",
+  "mission": "Touch a reviewable file",
+  "created_at": "2026-05-09T00:00:00.000Z",
+  "approved_at": "2026-05-09T00:00:00.000Z",
+  "root": {
+    "id": "t",
+    "type": "task",
+    "title": "Create file foo.txt with reviewer approval",
+    "goal": "A file named foo.txt with content 'hi' exists, with art-director approval.",
+    "acceptance_criteria": ["foo.txt exists with content 'hi'"],
+    "review": ["aaa-art-director"],
+    "validate": null,
+    "work_front": null,
+    "status": "pending",
+    "evidence": [],
+    "blocker_reason": null,
+    "review_attempts": 0,
+    "notes": [],
+    "children": []
+  }
+}
+EOF
+```
+
+Replace `aaa-art-director` with any reviewer subagent installed in your environment (check `~/.claude/agents/` and `~/.claude/skills/`). For testing without an installed reviewer, leave any name and use the manual `/goal:approve` path below.
+
+#### `/goal:start` and observe review flow
+
+Run `/goal:start --max-iter 10 --token-budget 200000 --time-budget 10m`, then prompt Claude to do the work. Claude should:
+
+1. Create `foo.txt` and emit `<evidence file="foo.txt" criterion="0" note="..." />` + `<task-status>achieved</task-status>` + `<review-request agents="aaa-art-director" />`.
+2. Stop hook fires → applyMutations transitions the cursor to `review-pending` → continuation prompt asks Claude to invoke the reviewer.
+3. Claude calls `Agent({subagent_type: "aaa-art-director", ...})` (if installed) and emits `<audit-verdict agent="aaa-art-director" status="GO|NOGO|REVISE">...</audit-verdict>`.
+4. Stop hook fires → applyMutations either advances cursor (all-GO) or returns to pursuing (any NOGO/REVISE). One audit JSON file is persisted per verdict.
+
+#### Verify audit persistence
+
+After at least one audit-verdict tag has been processed:
+
+```bash
+ls /tmp/goal-review-smoke/.claude/goals/active/audits/
+# Expected: one or more files like `t-2026-05-XX-...-aaa-art-director.json`
+cat /tmp/goal-review-smoke/.claude/goals/active/audits/*.json
+# Expected JSON body: {ts, node_id, kind: "audit-verdict", agent, status, text}
+```
+
+#### Manual override: `/goal:approve --reason "..."`
+
+If the reviewer subagent is not installed in your environment (or the agent emits a NOGO that you disagree with after manual inspection), use `/goal:approve`:
+
+```
+/goal:approve --reason "reviewer agent not installed in this environment"
+```
+
+**Expected:**
+- Console: `✅ manually approved → cursor: <next-task-id>` (or `(last task — goal achieved)` if it was the final task).
+- One new audit file in `audits/` named `<node>-<ts>-manual.json` with body `{...agent: "manual", status: "GO", manual: true, text: "..."}`.
+- `state.cursor` advanced (or `state.lifecycle = "achieved"` if last task).
+- `tree.root.children[0].status = "achieved"` (or whichever node was the cursor).
+
+#### `/goal:approve` failure modes
+
+`/goal:approve` refuses (exit 1) if:
+- No active goal (`state.json` missing).
+- `state.lifecycle != "pursuing"` (paused/achieved/unmet/budget-limited).
+- Cursor node is not in `review-pending` status (e.g., still `pursuing` or already `achieved`).
+- `state.cursor` doesn't match any node in the tree.
+
+To test the review-pending refusal, run `/goal:approve` BEFORE the agent has emitted `<review-request agents="..." />` — expect `❌ cursor not review-pending (is pursuing)`.
+
+### 10. (Optional) Pause / resume / abandon paths
 
 Re-run steps 1-4 to set up a fresh goal, then:
 
