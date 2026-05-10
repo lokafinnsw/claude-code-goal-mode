@@ -10,39 +10,41 @@ Your job is to **convert that file into the goal-mode schema**, NOT to design a 
 
 ## Hard rules — read first
 
-1. **Read the file at `{{file_path}}` completely.** Use the Read tool. If it doesn't exist or is empty, abort and tell the user.
+1. **Read the file at `{{file_path}}` completely.** Use the Read tool. Read every line, every heading, every table, every callout. If the file is over 2000 lines, page through it; do not stop at the first page. If it doesn't exist or is empty, abort and tell the user.
 
-2. **The file is the authority.** Do not invent tasks the file does not mention. Do not drop tasks the file does include. The user wrote that plan deliberately; preserve their intent.
+2. **DO NOT write a generator script.** The user explicitly forbids this shortcut. Output `tree.json` and `plan.md` DIRECTLY via the Write tool, even if the result is 50KB or 200KB or larger. The Write tool handles large files. Token cost is the cost of the task; do not optimize it away by emitting a Node/Python script that produces template output. Generator scripts lose fidelity with the source plan (they produce regular, templated nodes; the user's plan has irregular, hand-authored nuance per section). If the conversion is large, do it across multiple turns if needed, but every node MUST come from a deep read of the source, not from a loop.
 
-3. **Map the file's structure to Sprint → Epic → Task hierarchy.**
+3. **The file is the authority.** Do not invent tasks the file does not mention. Do not drop tasks the file does include. The user wrote that plan deliberately; preserve their intent.
+
+4. **Map the file's structure to Sprint → Epic → Task hierarchy.**
    - Most user files use H1 for the mission, H2 for top-level groups (Sprints or Phases), H3 for mid-level (Epics), H4 for tasks. If the file uses different heading levels (e.g., H2 directly to tasks with no epic layer), preserve the depth — every leaf is a task; intermediate nodes are sprints/epics in DFS order.
    - If the file uses `## Phase 1`, `## Phase 2`, treat each phase as a sprint.
    - If the file is flat (mission + bullet list of tasks), wrap the whole thing in one synthetic Sprint with one synthetic Epic; every bullet becomes a task.
 
-4. **Acceptance criteria extraction.** Look for:
+5. **Acceptance criteria extraction.** Look for:
    - Bullet lists under the task heading.
    - Lines starting with `- [ ]` or `- ` followed by an observable condition.
    - Sub-headings like "**Acceptance criteria:**", "**Done when:**", "**Definition of done:**".
    - If a task has no clearly-marked acceptance_criteria, **synthesize ≥1 from the task title and goal** — every task must have at least one criterion (the engine's schema requires `acceptance_criteria.length >= 1` for tasks).
    - Phrase as observable conditions, NOT aspirational adjectives. "Tests pass" is too weak — "the function `foo` returns the correct value for inputs A, B, C" is right.
 
-5. **Validate-command extraction.** Look for:
+6. **Validate-command extraction.** Look for:
    - Inline code spans with `npm test`, `cargo test`, `pytest`, `go test`, `dotnet test`, etc.
    - Lines like `**Validate:**` or `**Test:**` or `**Run:**`.
    - If absent, **infer from the project's stack** — read `package.json` / `Cargo.toml` / `pyproject.toml` / etc. and pick the appropriate test command.
    - If still absent and stack unclear, leave `validate: null` for that task.
 
-6. **Review-agent extraction.** Look for:
+7. **Review-agent extraction.** Look for:
    - Lines like `**Review:**` or `**Reviewers:**` or `**Audit:**`.
    - Visual/UX/security/performance tasks SHOULD have `review: [...]`. Infer from content if not explicit.
    - Pick reviewer names from `~/.claude/{skills,agents}/` and `<cwd>/.claude/{skills,agents}/` — only declare reviewers that exist locally; for unavailable ones, leave as TODO with a note in chat (the user can enable manual override via `/goal:approve` later).
 
-7. **Work-front extraction.** Look for:
+8. **Work-front extraction.** Look for:
    - `**Work front:**` or `**Track:**` annotations.
    - Section grouping by area (`## Engine work`, `## Frontend work`, etc.).
    - Default work fronts: `engine`, `art`, `narrative`, `audio`, `infra`, `docs`. Pick what fits.
 
-8. **No placeholder strings.** The validatePlan business-rule layer rejects `TBD`, `TODO`, `FIXME`, `XXX`, `???` in titles, goals, and acceptance criteria. If the user's source file contains these, REPLACE them with concrete observable text. If you cannot determine a concrete value, ASK the user before writing.
+9. **No placeholder strings.** The validatePlan business-rule layer rejects `TBD`, `TODO`, `FIXME`, `XXX`, `???` in titles, goals, and acceptance criteria. If the user's source file contains these, REPLACE them with concrete observable text. If you cannot determine a concrete value, ASK the user before writing.
 
 ## Output
 

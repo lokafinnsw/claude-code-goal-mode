@@ -4,6 +4,22 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] — 2026-05-10
+
+### Added
+
+- **README "Usage" section** between Installation and Status. End-to-end recipes for both entry paths (`/goal:plan` from scratch, `/goal:plan-from-file` from existing Markdown), then "while pursuing" (`/goal:status`, `/goal:pause`, `/goal:resume`), review gates with manual override, stopping (`/goal:abandon`, `/goal:clear`), state-file map, and a tag reference for the engine's parser. Emphasizes the structural-defense semantic: engine refuses to advance unless every acceptance criterion has at least one mapped `<evidence>` tag. (`README.md`)
+
+### Fixed
+
+- **`/goal:plan-from-file` agent shortcut: writing a generator script instead of emitting `tree.json` + `plan.md` directly.** Real failure case from the wild: agent saw a 1394-line, 17-sprint, 61-task source plan and decided "I'll write a Node generator script to produce the schema, this keeps my output token usage tractable." The script approach loses fidelity (every node becomes templated, not faithful to the source's hand-authored nuance per section). Fix: `prompts/plan-from-file.md` now has an explicit Hard Rule #2 forbidding generator scripts and naming the cure: emit the schema directly via the Write tool, even if the result is 100KB+; large outputs are the cost of the task, not a reason to shortcut. Rule #1 also strengthened: read every line / heading / table / callout, page through 2000+ line files. (`prompts/plan-from-file.md`, `tests/__snapshots__/continuation.test.mjs.snap`)
+
+### Notes
+
+The "writes a generator script" anti-pattern is a real cost-optimization failure mode for any LLM-driven schema-conversion task where the source is large. Documenting the anti-pattern in the prompt itself (as a Hard Rule, not a hint) is the cure.
+
+[1.1.4]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.4
+
 ## [1.1.3] — 2026-05-10
 
 ### Fixed

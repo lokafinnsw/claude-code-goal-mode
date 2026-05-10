@@ -186,6 +186,115 @@ Save, then run `/reload-plugins` (or restart Claude Code) and retry `/plugin ins
 
 Unrelated to goal-mode — they're failing hooks from a different plugin. They show up because hooks run on every prompt/Stop. To silence them, set the offending plugin to `false` in `~/.claude/settings.json` → `enabledPlugins` and `/reload-plugins`.
 
+## Usage
+
+This section walks through the typical end-to-end flow. For per-command details, see `/goal:help`.
+
+### From scratch (you have a mission, no plan yet)
+
+```
+/goal:plan "Migrate auth from sessions to JWT, with tests and zero downtime"
+```
+
+The LLM surveys your project (stack, test runner, lint configs) and writes a Sprint > Epic > Task tree into `.claude/goals/active/`. Three files appear: `tree.json` (machine, zod-valid), `plan.md` (human-readable, normalized), `state.json` (lifecycle: draft).
+
+Open `.claude/goals/active/plan.md`. Edit anything you want changed. Then:
+
+```
+/goal:approve-plan
+```
+
+This validates schema + per-task acceptance criteria + placeholder scan, and locks the plan (lifecycle: approved). Edit-and-retry is fine: validation errors print line-by-line, fix in `plan.md`, re-run.
+
+```
+/goal:start --max-iter 200 --token-budget 5000000 --time-budget 8h
+```
+
+Lifecycle goes to `pursuing`. The Stop hook becomes active. Walk away.
+
+### From your existing Markdown plan
+
+If you already wrote a plan in Markdown, do not redo it. Convert it:
+
+```
+/goal:plan-from-file docs/plans/2026-05-09-mvp-roadmap.md
+```
+
+The LLM reads your file end-to-end (every line, every heading, every table; it pages through if the file is over 2000 lines), maps headings to Sprint > Epic > Task (H1 mission, H2 sprint, H3 epic, H4 task is the default; any layout is mapped by depth), extracts acceptance criteria and validate commands where the file marks them, synthesizes them where it does not (every task needs at least one criterion), and writes the same three files. The LLM does NOT write a generator script for this (the prompt explicitly forbids that shortcut); it emits the schema directly via the Write tool, even if the result is 100KB+.
+
+After conversion, open the normalized `plan.md`, fix any `TBD` / `TODO` / `FIXME` placeholders the source file had (the engine rejects those at approve time), then:
+
+```
+/goal:approve-plan
+/goal:start [flags]
+```
+
+### While the goal is pursuing
+
+```
+/goal:status
+```
+
+Or just `/goal`. Renders the tree with status icons, cursor highlight, three budget bars (iterations / tokens / wall-clock), last 10 history events.
+
+```
+/goal:pause
+```
+
+Halts the loop. Stop hook stays registered but emits no continuation. Resume with `/goal:resume` (refuses if any budget is exhausted).
+
+### Review gates
+
+A task with `review: ["aaa-art-director", "rpg-game-designer"]` enters `review-pending` status when the agent emits `<task-status>achieved</task-status>` plus full evidence coverage. The agent must call `Agent({ subagent_type: "..." })` for each declared reviewer and emit their `<audit-verdict>` tags. Three NOGO verdicts in a row escalate the task to `blocked`.
+
+If a reviewer subagent does not exist locally:
+
+```
+/goal:approve --reason "manual GO: <evidence>"
+```
+
+Issues a manual GO verdict for the current `review-pending` task.
+
+### Stopping
+
+```
+/goal:abandon --reason "scope changed"
+```
+
+Lifecycle goes to `unmet`. The reason is recorded in history.
+
+```
+/goal:clear --archive
+```
+
+Snapshots the current goal to `.claude/goals/archive/<date>-<slug>/` and removes the active dir. Without `--archive`, deletes outright.
+
+### State files
+
+The engine writes to `.claude/goals/active/`:
+
+| File | Purpose |
+| :-- | :-- |
+| `tree.json` | The plan as data. Read every turn. Never mutated after `/goal:approve-plan`. |
+| `plan.md` | The plan as Markdown. Source of truth for human review. |
+| `state.json` | Lifecycle, cursor, budget tally, history. Atomically rewritten every Stop. |
+| `notes.md` | Append-only digest of every turn's progress. |
+| `audits/<node-id>-<iso-ts>-<agent>.json` | One file per audit verdict. |
+
+Compaction and `/clear` are non-events; the engine re-reads from disk every turn.
+
+### Tags the agent emits (reference, not required reading)
+
+You do not need to know these to use goal-mode. The continuation prompt steers the agent to emit them. For reference:
+
+- `<evidence file="src/auth/jwt.ts" criterion="acceptance.tests-pass">All 14 tests green</evidence>`: maps work to one acceptance criterion.
+- `<task-status>achieved</task-status>`: the agent claims the task is done.
+- `<review-request agents="aaa-art-director, rpg-game-designer"/>`: the agent requests audit.
+- `<audit-verdict status="GO|NOGO|REVISE" reason="..."/>`: a reviewer's verdict.
+- `<blocker reason="..."/>`: escalates the current task to `blocked`.
+
+The engine refuses to advance the cursor unless every acceptance criterion has at least one mapped `<evidence>` tag, even if `<task-status>achieved</task-status>` is present. This is the structural defense against proxy-signal collapse (the failure mode where the agent declares success because tests pass, even though the real user objective was not met).
+
 ## Status
 
 **v1.0.0 — stable.** All foundational phases shipped:
