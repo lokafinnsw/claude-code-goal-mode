@@ -41,17 +41,31 @@ for (let i = 0; i < args.length; i++) {
     process.exit(2);
   }
 }
-// CLAUDE_CODE_SESSION_ID is set ONLY in interactive Claude Code CLI mode.
-// Claude Desktop spawns Claude Code as SDK subprocess (CLAUDE_CODE_ENTRYPOINT=sdk-ts)
-// without setting this var. Reverse-engineering the CC binary confirms:
-//   if(process.env.CLAUDE_CODE_SESSION_ID) process.env.CLAUDE_CODE_SESSION_ID = Z_();
-// — conditional, only re-set if already set. So Desktop = no env var, ever.
+// Real-world finding (May 2026 runtime probe — env | grep CLAUDE inside a
+// claude-spawned subprocess of the Mac Desktop app):
+//
+//   CLAUDE_CODE_ENTRYPOINT=claude-desktop
+//   CLAUDE_CODE_EXECPATH=/Users/.../Library/Application Support/Claude/claude-code/<ver>/claude.app/...
+//   CLAUDECODE=1
+//   CLAUDE_CODE_SESSION_ID: NOT SET
+//
+// Desktop EMBEDS Claude Code (it's not a separate "SDK subprocess"); the same
+// installation drives both the terminal `claude` command and the Desktop app.
+// Hooks, settings.json, plugins, slash commands — all shared via ~/.claude/.
+//
+// Session id propagates as a CLI ARG (`--resume <uuid>`), NOT as an env var,
+// in the Desktop-spawned process. So `process.env.CLAUDE_CODE_SESSION_ID` is
+// undefined in any subprocess we spawn (slash command !-blocks, Bash tool, etc.)
+// even though there IS a session running.
 //
 // Fallback: store "*" (wildcard) as session_id. The Stop hook treats "*" as
-// "match any incoming stdin.session_id" so the continuation loop works in both
-// Desktop and CLI. Trade-off: if user runs multiple Claude Code sessions of the
-// same project simultaneously while a goal is active, all of them will drive
-// the goal. CLI users with a real session_id keep strict matching.
+// "match any incoming stdin.session_id" so the continuation loop works wherever
+// the env var is unset. CLI users running standalone `claude` get a real env
+// var and keep strict session matching.
+//
+// Trade-off: if you run multiple Claude sessions of the same project
+// simultaneously while a goal is active, all of them drive the goal. Acceptable
+// for single-user setups, documented in README.
 const sessionId = process.env.CLAUDE_CODE_SESSION_ID || '*';
 const isWildcard = sessionId === '*';
 const result = startGoal(process.cwd(), { sessionId, maxIter, tokenBudget, timeBudgetSeconds, force });

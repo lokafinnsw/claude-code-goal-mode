@@ -6,11 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.1.15] — 2026-05-10
 
-Fixes the LAST Claude Desktop blocker discovered after v1.1.13: even though the slash command was now reaching the script, `start-goal.sh` errored with `CLAUDE_CODE_SESSION_ID env var not set`. Reverse-engineering Desktop binary (May 2026) confirmed why: Desktop spawns Claude Code as SDK subprocess with `CLAUDE_CODE_ENTRYPOINT=sdk-ts` and never sets that env var.
+Fixes the last Claude Desktop blocker after v1.1.13: even though the slash command was reaching the script, `start-goal.sh` errored with `CLAUDE_CODE_SESSION_ID env var not set`.
+
+### Methodology correction (1.1.15-rev)
+
+The original v1.1.15 changelog explained this through "Desktop spawns Claude Code as SDK subprocess with `CLAUDE_CODE_ENTRYPOINT=sdk-ts`". That was reverse-engineered from `strings` of `app.asar` — STATIC binary analysis, not RUNTIME probe. A second-machine agent ran an actual probe hook in Desktop and reported `CLAUDE_CODE_ENTRYPOINT=claude-desktop`, which contradicted the static reading. A subsequent `env | grep CLAUDE` from a Desktop-spawned subprocess confirmed:
+
+```
+CLAUDE_CODE_ENTRYPOINT=claude-desktop      ← real value, not "sdk-ts"
+CLAUDE_CODE_EXECPATH=/Users/.../Library/Application Support/Claude/claude-code/<ver>/claude.app/...
+CLAUDECODE=1
+CLAUDE_CODE_SESSION_ID: NOT SET            ← session id rides as --resume <uuid> CLI arg, not env var
+parent process: /Applications/Claude.app/Contents/Helpers/disclaimer
+```
+
+Real Desktop architecture: it EMBEDS the same Claude Code binary used in the terminal (`~/Library/Application Support/Claude/claude-code/<ver>/claude.app/`), shares `~/.claude/`, runs the same hooks, and propagates session id as a CLI argument, not an env var. The `sdk-ts` value I cited was a default fallback in unreachable-from-Desktop code paths, not the runtime value.
+
+The CODE FIX in v1.1.15 (wildcard fallback when env var unset) is still correct — it handles exactly the runtime condition above. The NARRATIVE was wrong. Inline comments in `start-goal-cli.mjs` and this changelog now describe the real probe data instead of the inferred binary path.
+
+Lesson: probe runtime, don't grep binaries.
 
 ### Fixed
 
-- **`/goal-start` now works in Claude Desktop without `CLAUDE_CODE_SESSION_ID`.** Reverse-engineering finding (extracting Desktop's `app.asar` and grepping the CC binary): Desktop spawns CC with `spawnClaudeCode(...,{env:{...,CLAUDE_CODE_ENTRYPOINT:"sdk-ts"}})` (the SDK code path), and CC's session-id init is conditional: `if(process.env.CLAUDE_CODE_SESSION_ID) process.env.CLAUDE_CODE_SESSION_ID = Z_();` — only re-sets if already set. Desktop never sets it, so SDK-mode CC has no session_id, and bash subprocesses spawned by slash commands inherit nothing. Fix: `start-goal-cli.mjs` falls back to `session_id="*"` (wildcard) when the env var is unset, prints a notice telling the user the goal is in Desktop / no-session mode, and stores the wildcard in state.json. (`engine/start-goal-cli.mjs`)
+- **`/goal-start` now works in Claude Desktop without `CLAUDE_CODE_SESSION_ID`.** Real reason (per runtime probe, not binary inference): Desktop's embedded Claude Code receives `--resume <uuid>` as a CLI argument and does not set `CLAUDE_CODE_SESSION_ID` in the env of subprocesses it spawns (slash-command bash blocks, Bash-tool invocations, etc.). Our script reads `process.env.CLAUDE_CODE_SESSION_ID` and saw undefined → previously errored. Fix: `start-goal-cli.mjs` falls back to `session_id="*"` (wildcard) when the env var is unset, prints a notice that the goal is in no-session mode, and stores the wildcard in state.json. (`engine/start-goal-cli.mjs`)
 
 - **Stop hook session-id matching now treats `"*"` as "match any incoming stdin.session_id".** Previously `state.session_id !== stdin.session_id` was a strict no-op for any mismatch — which meant Desktop hooks with random stdin session_ids never advanced the cursor. v1.1.15: wildcard sentinel bypasses the strict check while preserving multi-CLI-session protection (real session_ids still match strictly). (`engine/stop-hook.mjs`)
 
