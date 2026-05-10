@@ -76,6 +76,7 @@ import { findNodeById } from './traversal.mjs';
 import { buildContext, render } from './continuation.mjs';
 import { notesPath, activeDir, auditsDir } from './paths.mjs';
 import { wallclockMinutes } from './wallclock.mjs';
+import { tallyTokens, checkLimits } from './budget.mjs';
 
 function readPrompt(name, pluginRoot) {
   return fs.readFileSync(path.join(pluginRoot, 'prompts', name), 'utf8');
@@ -117,6 +118,43 @@ export async function runStopHook({ stdin, projectRoot }) {
     if (!tree) return { exit: 0, stdout: null };
 
     state.budget.iterations.used += 1;
+    state.budget.tokens.used = tallyTokens(stdin.transcript_path);
+
+    const limitHit = checkLimits(state.budget);
+    if (limitHit) {
+      const ts = new Date().toISOString();
+      state.lifecycle = 'budget-limited';
+      state.ended_at = ts;
+      state.ended_reason = `${limitHit} budget exhausted`;
+      state.history.push({
+        ts,
+        iteration: state.budget.iterations.used,
+        event: 'budget-exhausted',
+        node_id: state.cursor,
+        payload: { kind: limitHit },
+      });
+      saveState(projectRoot, state);
+
+      const tpl = readPrompt('budget-limit.md', PLUGIN_ROOT);
+      const ctx = {
+        limit_kind: limitHit,
+        iterations_used: state.budget.iterations.used,
+        iterations_max: state.budget.iterations.max,
+        tokens_used: state.budget.tokens.used,
+        tokens_max: state.budget.tokens.max,
+        wallclock_minutes: wallclockMinutes(state),
+        wallclock_max_minutes: Math.floor(state.budget.wallclock.max_seconds / 60),
+        ts,
+      };
+      return {
+        exit: 0,
+        stdout: {
+          decision: 'block',
+          reason: render(tpl, ctx),
+          systemMessage: `🟡 ${limitHit} budget exhausted`,
+        },
+      };
+    }
 
     const lastText = readLastAssistantText(stdin.transcript_path);
     const scopedText = stripCodeRegions(lastText);

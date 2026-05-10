@@ -235,6 +235,159 @@ describe('runStopHook hardening fix-ups', () => {
   });
 });
 
+describe('runStopHook triple budget', () => {
+  it('on token budget exhaustion: renders budget-limit prompt + lifecycle=budget-limited', async () => {
+    // Build transcript with high token usage; tokens.max=5000 will be exceeded.
+    const transcriptText = JSON.stringify({
+      message: {
+        role: 'assistant',
+        usage: { input_tokens: 5000, output_tokens: 3000, cache_creation_input_tokens: 0 },
+      },
+    }) + '\n';
+
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.budget.tokens.max = 5000;
+    const { root, tPath } = setupProject(tree, state, transcriptText);
+
+    const result = await runStopHook({
+      stdin: { session_id: 'sess-1', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    expect(result.stdout.systemMessage).toMatch(/tokens budget exhausted/);
+    expect(result.stdout.reason).toContain('budget exhausted');
+    expect(result.stdout.reason).toContain('tokens');
+
+    const newState = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(newState.lifecycle).toBe('budget-limited');
+    expect(newState.ended_reason).toBe('tokens budget exhausted');
+    const lastEvent = newState.history[newState.history.length - 1];
+    expect(lastEvent.event).toBe('budget-exhausted');
+    expect(lastEvent.payload.kind).toBe('tokens');
+  });
+
+  it('on iterations budget exhaustion: renders budget-limit prompt + lifecycle=budget-limited', async () => {
+    const transcriptText = JSON.stringify({
+      message: { role: 'assistant', content: [{ type: 'text', text: 'no tags' }] },
+    }) + '\n';
+
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.budget.iterations.used = 49;  // increment in stop-hook → 50, equals max → exhausted
+    state.budget.iterations.max = 50;
+    const { root, tPath } = setupProject(tree, state, transcriptText);
+
+    const result = await runStopHook({
+      stdin: { session_id: 'sess-1', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    expect(result.stdout.systemMessage).toMatch(/iterations budget exhausted/);
+
+    const newState = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(newState.lifecycle).toBe('budget-limited');
+    expect(newState.ended_reason).toBe('iterations budget exhausted');
+  });
+
+  it('on wallclock budget exhaustion: renders budget-limit prompt + lifecycle=budget-limited', async () => {
+    const transcriptText = JSON.stringify({
+      message: { role: 'assistant', content: [{ type: 'text', text: 'no tags' }] },
+    }) + '\n';
+
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.budget.wallclock.started_at = new Date(Date.now() - 700_000).toISOString();  // ~11.7 min ago
+    state.budget.wallclock.max_seconds = 600;  // 10 min max
+    const { root, tPath } = setupProject(tree, state, transcriptText);
+
+    const result = await runStopHook({
+      stdin: { session_id: 'sess-1', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    expect(result.stdout.systemMessage).toMatch(/wallclock budget exhausted/);
+
+    const newState = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(newState.lifecycle).toBe('budget-limited');
+    expect(newState.ended_reason).toBe('wallclock budget exhausted');
+  });
+
+  it('budget-limit fires BEFORE applyMutations runs (tags in transcript are not processed)', async () => {
+    // Transcript has both high token usage AND a task-status:achieved tag.
+    // If budget check ran AFTER applyMutations, the cursor would advance.
+    // Confirm: cursor stays put, lifecycle goes budget-limited.
+    const transcriptText = JSON.stringify({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: '<evidence file="x" criterion="0" note="done" />\n<task-status>achieved</task-status>' }],
+        usage: { input_tokens: 5000, output_tokens: 3000 },
+      },
+    }) + '\n';
+
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.budget.tokens.max = 5000;
+    const { root, tPath } = setupProject(tree, state, transcriptText);
+
+    await runStopHook({
+      stdin: { session_id: 'sess-1', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    const newTree = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/tree.json'), 'utf8'));
+    expect(newTree.root.status).toBe('pursuing');  // NOT 'achieved' — applyMutations did not run
+    expect(newTree.root.evidence).toEqual([]);  // no evidence accumulated
+  });
+
+  it('does not fire budget-limit when all axes are within budget', async () => {
+    const transcriptText = JSON.stringify({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'normal turn' }],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      },
+    }) + '\n';
+
+    const tree = minimalTree();
+    const state = pursuingState();
+    state.budget.tokens.max = 1_000_000;  // way more than 150
+    const { root, tPath } = setupProject(tree, state, transcriptText);
+
+    const result = await runStopHook({
+      stdin: { session_id: 'sess-1', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    // Normal continuation prompt, NOT budget-limit.
+    expect(result.stdout.systemMessage).toMatch(/🎯/);  // normal pursuing emoji
+    expect(result.stdout.reason).not.toContain('budget exhausted');
+
+    const newState = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(newState.lifecycle).toBe('pursuing');
+    expect(newState.budget.tokens.used).toBe(150);  // tallied correctly
+  });
+
+  it('tallies tokens across multiple assistant rows in transcript', async () => {
+    const transcriptText = [
+      { message: { role: 'assistant', usage: { input_tokens: 100, output_tokens: 50 } } },
+      { message: { role: 'assistant', content: [{ type: 'text', text: 'no tags' }], usage: { input_tokens: 200, output_tokens: 100 } } },
+    ].map(r => JSON.stringify(r)).join('\n');
+
+    const tree = minimalTree();
+    const state = pursuingState();
+    const { root, tPath } = setupProject(tree, state, transcriptText);
+
+    await runStopHook({
+      stdin: { session_id: 'sess-1', transcript_path: tPath },
+      projectRoot: root,
+    });
+
+    const newState = JSON.parse(fs.readFileSync(path.join(root, '.claude/goals/active/state.json'), 'utf8'));
+    expect(newState.budget.tokens.used).toBe(450);  // 100+50+200+100
+  });
+});
+
 describe('runStopHook PLUGIN_ROOT runtime resolution (Bug 3)', () => {
   it('honors CLAUDE_PLUGIN_ROOT set after module import', async () => {
     // Import once (already done at top of file). Now override env.
