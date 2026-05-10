@@ -37,7 +37,7 @@ import { activeDir, archiveDir } from './paths.mjs';
  */
 export function pauseGoal(projectRoot) {
   const state = loadState(projectRoot);
-  if (!state) return { ok: false, error: 'no active goal' };
+  if (!state) return { ok: false, error: 'No active goal.' };
   if (state.lifecycle !== 'pursuing') {
     return { ok: false, error: `cannot pause from lifecycle=${state.lifecycle}` };
   }
@@ -63,7 +63,7 @@ export function pauseGoal(projectRoot) {
  */
 export function resumeGoal(projectRoot) {
   const state = loadState(projectRoot);
-  if (!state) return { ok: false, error: 'no active goal' };
+  if (!state) return { ok: false, error: 'No active goal.' };
   if (state.lifecycle !== 'paused') {
     return { ok: false, error: `cannot resume from lifecycle=${state.lifecycle}` };
   }
@@ -130,7 +130,7 @@ const ABANDONABLE_LIFECYCLES = new Set(['pursuing', 'paused']);
 
 export function abandonGoal(projectRoot, { reason = 'manual abandon' } = {}) {
   const state = loadState(projectRoot);
-  if (!state) return { ok: false, error: 'no active goal' };
+  if (!state) return { ok: false, error: 'No active goal.' };
   if (!ABANDONABLE_LIFECYCLES.has(state.lifecycle)) {
     return { ok: false, error: `cannot abandon from lifecycle=${state.lifecycle}` };
   }

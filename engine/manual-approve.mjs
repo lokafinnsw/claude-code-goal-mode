@@ -61,7 +61,7 @@ function safeFilenamePart(s) {
 
 export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   const state = loadState(projectRoot);
-  if (!state) return { ok: false, error: 'no active goal' };
+  if (!state) return { ok: false, error: 'No active goal.' };
   if (state.lifecycle !== 'pursuing') {
     return { ok: false, error: `cannot manually approve from lifecycle=${state.lifecycle}` };
   }

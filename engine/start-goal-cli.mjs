@@ -36,10 +36,16 @@ for (let i = 0; i < args.length; i++) {
     timeBudgetSeconds = m[2] === 'h' ? n * 3600 : n * 60;
   }
   else if (args[i] === '--force') force = true;
+  else {
+    console.error(`Unknown argument: ${args[i]}\nUsage: /goal-start [--max-iter N] [--token-budget N] [--time-budget Nm|Nh] [--force]`);
+    process.exit(2);
+  }
 }
 const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
 if (!sessionId) {
-  console.error('CLAUDE_CODE_SESSION_ID env var not set; this command must run inside a Claude Code session.');
+  console.error('CLAUDE_CODE_SESSION_ID env var not set.');
+  console.error('This command must run inside a Claude Code CLI session (the terminal app), not Claude Desktop.');
+  console.error('Claude Desktop slash commands cannot expand $ARGUMENTS — see README "Claude Desktop limitations".');
   process.exit(2);
 }
 const result = startGoal(process.cwd(), { sessionId, maxIter, tokenBudget, timeBudgetSeconds, force });

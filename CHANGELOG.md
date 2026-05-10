@@ -4,6 +4,51 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.12] — 2026-05-10
+
+Closes the M1-M7 tech-debt list from REAL-USAGE-FINDINGS plus a documented Claude Desktop limitation discovered when `/goal-start --max-iter ...` failed in Desktop with "isn't a recognized command here".
+
+### Fixed
+
+- **M1: Inconsistent "no active goal" casing.** `clear-cli.mjs` printed `no active goal` (lowercase, no period); `render-status-cli.mjs` printed `No active goal.` (capitalized). Lifecycle errors in `lifecycle-commands.mjs` and `manual-approve.mjs` also returned lowercase. Fix: all four code paths now return `No active goal.` (capitalized + period). Tests use `/no active goal/i` (case-insensitive) so no test changes needed. (`engine/clear-cli.mjs`, `engine/lifecycle-commands.mjs`, `engine/manual-approve.mjs`)
+
+- **M2: `approve-plan-cli` silently accepted unknown args** (e.g., `--dry-run` was ignored without warning, leading users to think the flag worked). Fix: any non-empty arg list rejected with `Unknown arguments: <args>` + usage hint, exit 2. (`engine/approve-plan-cli.mjs`)
+
+- **M5: `start-goal-cli` silently ignored unknown args.** Same pattern — typos like `--max-iters` (extra s) just got dropped, default kept. Fix: explicit `else` branch in arg loop rejects unknown args with usage hint, exit 2. (`engine/start-goal-cli.mjs`)
+
+- **M2 + M5 also applied to `clear-cli.mjs`, `abandon-cli.mjs`, `approve-cli.mjs`** for consistency. Each rejects unknown args with usage hint.
+
+- **M6: `start-goal-cli` env-var-missing error did not hint at the cause.** When `CLAUDE_CODE_SESSION_ID` was unset, the message said only "this command must run inside a Claude Code session" — but the most common cause is a user running it from Claude Desktop, where the env var is never set because Desktop has no plugin loader. Fix: error now explicitly says "the terminal app, not Claude Desktop" + reference to the new README "Claude Desktop limitations" section. (`engine/start-goal-cli.mjs`)
+
+- **M3: Continuation prompts (continuation.md, continuation-blocked.md, audit-instructions.md) emitted blank lines between Mustache `{{#each}}` items.** Each iteration produced `\n- item\n`, but the `{{#each}}` tag itself was on its own line ending with `\n`, so the rendered output had an extra blank line before AND after the loop body. Lists looked spacey. Fix: inline the `{{#each}}` tag with the first content line so the loop body emits items contiguously. Verified: 2-item criteria render as `- a\n- b\n`, no blank lines between. Snapshot tests regenerated. (`prompts/continuation.md`, `prompts/continuation-blocked.md`, `prompts/audit-instructions.md`, `tests/__snapshots__/continuation.test.mjs.snap`)
+
+- **M4: `plan-bootstrap.md` mandated only 2 output files (tree.json + plan.md), while `plan-from-file.md` mandated 3 (tree.json + plan.md + state.json).** This asymmetry meant `/goal-plan` left the user without a `state.json`, so `/goal-approve-plan` had to synthesize one — and the user's manual edit window between plan and approve had no consistent state shape to reason about. Fix: plan-bootstrap.md now mandates all 3 files in this single turn (matching plan-from-file.md), with the same minimal-draft state.json shape (lifecycle: draft, cursor: pending, history: []). (`prompts/plan-bootstrap.md`)
+
+- **M7: `fix-cli-source.sh --help` was missing.** Users running the script without context saw it act on `~/.claude/` immediately (with backups, but still surprising). Fix: `--help` and `-h` now print background, usage, what-it-does, and exit codes; main script body unchanged when no help flag. (`scripts/fix-cli-source.sh`)
+
+### Added — Claude Desktop limitations (documentation)
+
+- **README "Claude Desktop limitations" section** between Installation and Switching paths. Documents two limits versus Claude Code CLI:
+  1. `$ARGUMENTS` is CLI-only. Slash commands taking arguments (`/goal-start`, `/goal-plan`, `/goal-plan-from-file`, `/goal-approve --reason`, `/goal-abandon --reason`, `/goal-clear --archive`) emit "isn't a recognized command here" in Desktop. Run from CLI instead.
+  2. Zero-arg commands (`/goal-help`, `/goal-status`, `/goal-pause`, `/goal-resume`, `/goal-approve-plan`) work in both.
+
+  The recommended workflow if a user primarily uses Desktop: run `/goal-plan` and `/goal-start` once from CLI to bootstrap the active goal, then drive the Stop-hook loop from Desktop with no further argument-bearing commands needed.
+
+  This is a Claude Desktop limitation, not a goal-mode bug. Documented so a future user hitting the same `/goal-start` rejection in Desktop has a clear answer + workaround. (`README.md`)
+
+### Notes
+
+`engine/lifecycle-commands.mjs` returns `{ ok: false, error: 'No active goal.' }` (capitalized + period). The two-call sites in `engine/clear-cli.mjs` (the `noop` branch) and `engine/render-status-cli.mjs` already used the capitalized form. Test count unchanged at 293; only snapshots updated.
+
+End-to-end smoke verification of all 7 M-fixes done locally:
+- M2: `bash scripts/approve-plan.sh --dry-run` → `Unknown arguments: --dry-run\nUsage: /goal-approve-plan (no arguments)` (was: silent acceptance).
+- M5: `bash scripts/start-goal.sh --bogus` → `Unknown argument: --bogus\nUsage: /goal-start [...]` (was: silent acceptance, default kept).
+- M6: `bash scripts/start-goal.sh` (no env var) → 3-line error with Desktop hint (was: 1 line, no Desktop reference).
+- M7: `bash scripts/fix-cli-source.sh --help` → multi-line help block + exit 0 (was: no flag, ran on $HOME immediately).
+- M3: rendered continuation.md shows `- [ ] (#0) a\n- [x] (#1) b\n\n## Already...` (no blank line between criteria items; one blank line before next section, which is normal markdown).
+
+[1.1.12]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.12
+
 ## [1.1.11] — 2026-05-10
 
 Fixes 4 bugs uncovered by REAL-USAGE-FINDINGS testing (synthetic-fixture run on Darwin arm64, Node 25.9.0). Two Critical, two Important; +5 regression tests.

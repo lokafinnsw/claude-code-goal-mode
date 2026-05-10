@@ -3,13 +3,10 @@ You are reviewing task `{{task_id}}` ("{{task_title}}") for completeness.
 **Task goal:** {{task_goal}}
 
 **Acceptance criteria:**
-{{#each criteria}}
-- (#{{index}}) {{text}}
+{{#each criteria}}- (#{{index}}) {{text}}
 {{/each}}
-
 **Evidence the implementer collected:**
-{{#each evidence}}
-- iter {{iteration}}, criterion #{{criterion_index}} — {{note}}{{#if file}} ({{file}}{{#if line}}:{{line}}{{/if}}){{/if}}{{#if command}} `{{command}}` exit={{exit_code}}{{/if}}
+{{#each evidence}}- iter {{iteration}}, criterion #{{criterion_index}} — {{note}}{{#if file}} ({{file}}{{#if line}}:{{line}}{{/if}}){{/if}}{{#if command}} `{{command}}` exit={{exit_code}}{{/if}}
 {{/each}}
 
 {{#if validate}}

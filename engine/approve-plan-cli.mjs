@@ -131,6 +131,11 @@ export function approvePlan(projectRoot, opts = {}) {
 // CLI entry — guarded so tests can `import` this file and call the exported
 // helpers in isolation without triggering the side effects.
 if (import.meta.url === `file://${process.argv[1]}`) {
+  const args = process.argv.slice(2);
+  if (args.length > 0) {
+    console.error(`Unknown arguments: ${args.join(' ')}\nUsage: /goal-approve-plan (no arguments)`);
+    process.exit(2);
+  }
   const result = approvePlan(process.cwd());
   if (result.warnings.length) {
     console.log('⚠️  warnings:');

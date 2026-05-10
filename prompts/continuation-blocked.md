@@ -6,14 +6,11 @@ The task **{{task_title}}** (id: `{{task_id}}`) is currently blocked.
 {{#if last_verdicts}}
 
 **Last review verdicts:**
-{{#each last_verdicts}}
-- {{agent}} ({{status}}): {{text}}
-{{/each}}
-{{/if}}
+{{#each last_verdicts}}- {{agent}} ({{status}}): {{text}}
+{{/each}}{{/if}}
 
 ## Acceptance criteria still uncovered
-{{#each uncovered_criteria}}
-- (#{{index}}) {{text}}
+{{#each uncovered_criteria}}- (#{{index}}) {{text}}
 {{/each}}
 
 ## What to do this turn

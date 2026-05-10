@@ -10,13 +10,10 @@
 {{task_goal}}
 
 ## Acceptance criteria — none can be skipped
-{{#each criteria}}
-- [{{covered_marker}}] (#{{index}}) {{text}}
+{{#each criteria}}- [{{covered_marker}}] (#{{index}}) {{text}}
 {{/each}}
-
 ## Already collected evidence
-{{#each evidence}}
-- iter {{iteration}}: criterion #{{criterion_index}} — {{note}}{{#if file}} ({{file}}{{#if line}}:{{line}}{{/if}}){{/if}}{{#if command}} `{{command}}` exit={{exit_code}}{{/if}}
+{{#each evidence}}- iter {{iteration}}: criterion #{{criterion_index}} — {{note}}{{#if file}} ({{file}}{{#if line}}:{{line}}{{/if}}){{/if}}{{#if command}} `{{command}}` exit={{exit_code}}{{/if}}
 {{/each}}
 
 ## What to do this turn

@@ -24,6 +24,13 @@ You are about to build a plan-tree for the user's mission. Mission text follows 
 
 ## Output
 
+By the end of this turn, all three files MUST exist on disk:
+- `.claude/goals/active/tree.json`
+- `.claude/goals/active/plan.md`
+- `.claude/goals/active/state.json`
+
+Use ONE Write tool call per file. Three Writes total.
+
 Write TWO files in `.claude/goals/active/`:
 
 ### `plan.md` (human-readable)
@@ -54,7 +61,33 @@ Write TWO files in `.claude/goals/active/`:
 
 Same hierarchy in JSON matching the GoalTreeSchema. Set every node's `status: "pending"`, empty `evidence: []`, `review_attempts: 0`, etc. Set `schema_version: 1`. Set `goal_id` to a slug of the mission. Set `created_at` to now ISO. Set `approved_at: null` (will be filled by `/goal-approve-plan`).
 
-## After writing both files
+### `state.json` (machine, zod-valid)
+
+Minimal draft state. Match `engine/state.mjs::GoalStateSchema`:
+
+```json
+{
+  "schema_version": 1,
+  "goal_id": "<the slug from tree.goal_id>",
+  "lifecycle": "draft",
+  "cursor": "pending",
+  "budget": {
+    "iterations": { "used": 0, "max": 0 },
+    "tokens": { "used": 0, "max": 0 },
+    "wallclock": { "started_at": "<now ISO>", "max_seconds": 0 }
+  },
+  "session_id": "pending",
+  "started_at": null,
+  "paused_at": null,
+  "ended_at": null,
+  "ended_reason": null,
+  "history": []
+}
+```
+
+`cursor`, `session_id`, and budget caps are placeholders — they will be replaced when `/goal-start` runs.
+
+## After writing all three files
 
 Tell the user, in chat:
 1. The counts: how many sprints, epics, tasks.
