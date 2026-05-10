@@ -4,6 +4,27 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.13] — 2026-05-10
+
+Fixes the real Claude Desktop blocker: 6 commands using `$ARGUMENTS` shell expansion in their markdown were silently rejected by Desktop's slash-command parser (regardless of whether the user passed args), making `/goal-start`, `/goal-plan`, `/goal-plan-from-file`, `/goal-approve`, `/goal-abandon`, `/goal-clear` unusable in Desktop. v1.1.12 documented this as a Desktop limitation. v1.1.13 actually fixes it.
+
+### Fixed
+
+- **All 11 commands now work in both Claude Code CLI and Claude Desktop.** Root cause of the Desktop rejection: 6 of the command files (`commands/goal-start.md`, `goal-plan.md`, `goal-plan-from-file.md`, `goal-approve.md`, `goal-abandon.md`, `goal-clear.md`) used the `$ARGUMENTS` placeholder inside a `\`\`\`!` shell block. Claude Code CLI expands `$ARGUMENTS` before executing the block; Claude Desktop does not, and its parser rejects the whole command with "isn't a recognized command here" — even when the user types the command with no args. Fix: switch from `$ARGUMENTS`-substitution to a natural-language pattern. The command markdown now instructs the agent to parse the user's typed flags from their message and dispatch the underlying script via Bash with the parsed values. The agent does the parsing in either environment, so the same `/goal-start --max-iter 800` works identically in Desktop and CLI. (`commands/goal-start.md`, `commands/goal-plan.md`, `commands/goal-plan-from-file.md`, `commands/goal-approve.md`, `commands/goal-abandon.md`, `commands/goal-clear.md`)
+
+### Changed
+
+- **README "Claude Desktop limitations" section** rewritten to reflect that the limitation is gone in v1.1.13. The previous text said "no clean workaround"; that was true at the time given the v1.1.12 codebase, but the natural-language pattern in v1.1.13 IS the workaround. (`README.md`)
+
+### Notes
+
+End-to-end smoke verified locally on the maintainer's mancelot test target:
+- All shim scripts (start-goal.sh, etc.) still accept the same `--flag` syntax — only the command-markdown layer changed. The agent now reads the user's message, parses flags, and invokes the script with explicit arguments via the Bash tool. This means CLI users keep their familiar `/goal-start --max-iter 800` UX, and Desktop users get the same flow without hitting the parser rejection.
+- The 5 zero-arg commands (`goal-help`, `goal-status`, `goal-pause`, `goal-resume`, `goal-approve-plan`) still use the inline `\`\`\`!` shell-block pattern — no change there.
+- Test count unchanged at 293; no test asserts on `$ARGUMENTS` literal in committed test files.
+
+[1.1.13]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.13
+
 ## [1.1.12] — 2026-05-10
 
 Closes the M1-M7 tech-debt list from REAL-USAGE-FINDINGS plus a documented Claude Desktop limitation discovered when `/goal-start --max-iter ...` failed in Desktop with "isn't a recognized command here".

@@ -6,13 +6,11 @@ allowed-tools: ["Read", "Glob", "Grep", "Bash(ls:*)", "Bash(cat:*)", "Bash(git l
 
 # Goal Plan
 
-The user wants to build a plan tree. Mission text:
-
-$ARGUMENTS
+The user invoked `/goal-plan` followed by mission text. Extract the mission from the user's message (everything after `/goal-plan`).
 
 Read the bootstrap instructions and follow them precisely. The instructions are at:
 
-```!
+```bash
 cat "${CLAUDE_PLUGIN_ROOT}/prompts/plan-bootstrap.md"
 ```
 

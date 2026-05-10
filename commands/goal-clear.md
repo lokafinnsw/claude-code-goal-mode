@@ -6,6 +6,12 @@ allowed-tools: ["Bash(${CLAUDE_PLUGIN_ROOT}/scripts/clear-goal.sh:*)"]
 
 # Goal Clear
 
-```!
-"${CLAUDE_PLUGIN_ROOT}/scripts/clear-goal.sh" $ARGUMENTS
+The user invoked `/goal-clear` and may have specified `--archive` to snapshot before deletion.
+
+Run via Bash:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/scripts/clear-goal.sh" [--archive]
 ```
+
+(Omit `--archive` if not requested.) Print the script output to the user. If `--archive` was used, the archive path is printed.

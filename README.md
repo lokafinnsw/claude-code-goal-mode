@@ -150,14 +150,11 @@ What `install.sh` does (idempotent — re-run after `git pull`):
 
 After install, restart Claude Desktop, then `/goal-help` should show the command list.
 
-### Claude Desktop limitations
+### Claude Desktop & Claude Code CLI both work (since v1.1.13)
 
-`install.sh` makes goal-mode commands appear in Claude Desktop's slash-command list, but Desktop has two limitations versus Claude Code CLI:
+All 11 commands work in both environments. Earlier versions used `$ARGUMENTS` shell expansion in command markdown which Claude Desktop did not support — v1.1.13 switched to a natural-language pattern where the command markdown instructs the agent to parse the user's typed args and dispatch the script via Bash. The agent does the parsing in either environment.
 
-1. **`$ARGUMENTS` is CLI-only.** Slash commands that take arguments (`/goal-start --max-iter N ...`, `/goal-plan "<mission>"`, `/goal-plan-from-file <path>`, `/goal-approve --reason "..."`, `/goal-abandon --reason "..."`, `/goal-clear --archive`) emit "isn't a recognized command here" in Desktop because Desktop does not expand `$ARGUMENTS`. Run these from the Claude Code CLI (terminal app) instead.
-2. **Zero-arg commands work.** `/goal-help`, `/goal-status` (or just `/goal`), `/goal-pause`, `/goal-resume`, `/goal-approve-plan` work in both Desktop and CLI.
-
-There is no clean workaround for (1) — it is a Claude Desktop limitation, not a goal-mode bug. The recommended workflow if you primarily use Desktop: run `/goal-plan` and `/goal-start` once from CLI to bootstrap the active goal, then drive the Stop-hook loop from Desktop with no further argument-bearing commands needed.
+So `/goal-start --max-iter 800 --token-budget 20000000 --time-budget 24h` works the same way in Desktop and in CLI.
 
 ### Switching between paths
 
