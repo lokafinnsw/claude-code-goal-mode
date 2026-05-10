@@ -70,9 +70,20 @@
  *   - Both views are equivalent (state.history.slice(-history.length) ===
  *     history when the input state.history is preserved).
  *
- * Pure: no I/O, no globals, no Math.random. Inputs are deep-cloned via
- * structuredClone; the original objects are never mutated.
+ * Pure (modulo opts.auditsDir): no globals, no Math.random. Inputs are
+ * deep-cloned via structuredClone; the original objects are never mutated.
+ *
+ * opts.auditsDir (optional, Phase 7):
+ *   When provided, every audit-verdict tag in `tags` produces a JSON file
+ *   under `opts.auditsDir` capturing { ts, node_id, kind:'audit-verdict',
+ *   agent, status, text }. Files are written regardless of advance/no-
+ *   advance outcome (i.e. NOGO verdicts persist alongside GOs). Filename
+ *   shape: `<node-id>-<ts-with-colon-and-dot-replaced-by-dash>-<agent>.json`.
+ *   Omitting opts.auditsDir preserves pre-Phase-7 pure behavior — no I/O
+ *   anywhere.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { findNodeById, nextPendingTaskAfter } from './traversal.mjs';
 
 function allCriteriaCovered(node) {
@@ -86,7 +97,7 @@ function allCriteriaCovered(node) {
 }
 
 // Returns a new tree (deep-cloned) with mutations applied, new state, and history entries.
-export function applyMutations(treeIn, stateIn, tags, ts) {
+export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
   const tree = structuredClone(treeIn);
   const state = structuredClone(stateIn);
   const history = [];
@@ -161,6 +172,21 @@ export function applyMutations(treeIn, stateIn, tags, ts) {
         event: 'review-verdict', node_id: cursorNode.id,
         payload: { agent: v.agent, status: v.status, text: v.text },
       });
+      // Phase 7: persist verdict to disk when caller wires opts.auditsDir.
+      // Written BEFORE the allGo/anyNo gate below so NOGO verdicts persist too.
+      if (opts.auditsDir) {
+        fs.mkdirSync(opts.auditsDir, { recursive: true });
+        const fname = `${cursorNode.id}-${ts.replace(/[:.]/g, '-')}-${v.agent}.json`;
+        const body = {
+          ts,
+          node_id: cursorNode.id,
+          kind: 'audit-verdict',
+          agent: v.agent,
+          status: v.status,
+          text: v.text,
+        };
+        fs.writeFileSync(path.join(opts.auditsDir, fname), JSON.stringify(body, null, 2));
+      }
     }
     // Strict: any NOGO/REVISE blocks advancement, even mixed with GOs in the same batch.
     const anyNo = verdicts.some(v => v.status === 'NOGO' || v.status === 'REVISE');

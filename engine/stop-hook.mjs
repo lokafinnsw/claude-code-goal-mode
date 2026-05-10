@@ -74,7 +74,7 @@ import { parseTags } from './parse-tags.mjs';
 import { applyMutations } from './apply-mutations.mjs';
 import { findNodeById } from './traversal.mjs';
 import { buildContext, render } from './continuation.mjs';
-import { notesPath, activeDir } from './paths.mjs';
+import { notesPath, activeDir, auditsDir } from './paths.mjs';
 import { wallclockMinutes } from './wallclock.mjs';
 
 function readPrompt(name, pluginRoot) {
@@ -122,7 +122,9 @@ export async function runStopHook({ stdin, projectRoot }) {
     const scopedText = stripCodeRegions(lastText);
     const tags = parseTags(scopedText);
     const ts = new Date().toISOString();
-    const { tree: newTree, state: newState } = applyMutations(tree, state, tags, ts);
+    const { tree: newTree, state: newState } = applyMutations(tree, state, tags, ts, {
+      auditsDir: auditsDir(projectRoot),
+    });
 
     saveTree(projectRoot, newTree);
     saveState(projectRoot, newState);

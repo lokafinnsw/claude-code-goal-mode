@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { applyMutations } from '../engine/apply-mutations.mjs';
 import { nextPendingTaskAfter } from '../engine/traversal.mjs';
 
@@ -385,5 +388,91 @@ describe('applyMutations hardening fix-ups', () => {
     ], '2026-05-09T01:00:00.000Z');
     expect(JSON.stringify(tree)).toBe(treeBefore);
     expect(JSON.stringify(state)).toBe(stateBefore);
+  });
+});
+
+describe('applyMutations audit persistence', () => {
+  function twoTaskTree() {
+    return {
+      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      root: {
+        id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
+        review: [], validate: null, work_front: null, status: 'pursuing',
+        evidence: [], blocker_reason: null, review_attempts: 0, notes: [],
+        children: [
+          { id: 's.t1', type: 'task', title: 't1', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pursuing', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
+          { id: 's.t2', type: 'task', title: 't2', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pending', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
+        ],
+      },
+    };
+  }
+
+  it('writes one JSON file per audit-verdict to opts.auditsDir', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-'));
+    const tree = twoTaskTree();
+    tree.root.children[0].review = ['art-x'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].evidence = [
+      { ts: 't', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'n' },
+    ];
+    const state = mkState('s.t1');
+    const tags = [{ kind: 'audit-verdict', agent: 'art-x', status: 'GO', text: 'ok' }];
+
+    applyMutations(tree, state, tags, '2026-05-09T01:00:00.000Z', {
+      auditsDir: path.join(root, 'audits'),
+    });
+
+    const files = fs.readdirSync(path.join(root, 'audits'));
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(/^s\.t1-/);
+    expect(files[0]).toContain('art-x');
+    const body = JSON.parse(fs.readFileSync(path.join(root, 'audits', files[0]), 'utf8'));
+    expect(body).toMatchObject({
+      agent: 'art-x',
+      status: 'GO',
+      text: 'ok',
+      kind: 'audit-verdict',
+      node_id: 's.t1',
+    });
+    expect(body.ts).toBe('2026-05-09T01:00:00.000Z');
+  });
+
+  it('writes one file per agent when multiple verdicts in one batch', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-multi-'));
+    const tree = twoTaskTree();
+    tree.root.children[0].review = ['art-x', 'design-y'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].evidence = [
+      { ts: 't', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'n' },
+    ];
+    const state = mkState('s.t1');
+    const tags = [
+      { kind: 'audit-verdict', agent: 'art-x', status: 'GO', text: 'ok' },
+      { kind: 'audit-verdict', agent: 'design-y', status: 'GO', text: 'approved' },
+    ];
+
+    applyMutations(tree, state, tags, '2026-05-09T01:00:00.000Z', {
+      auditsDir: path.join(root, 'audits'),
+    });
+
+    const files = fs.readdirSync(path.join(root, 'audits'));
+    expect(files.length).toBe(2);
+    const agents = files.map(f => f.includes('art-x') ? 'art-x' : 'design-y').sort();
+    expect(agents).toEqual(['art-x', 'design-y']);
+  });
+
+  it('does not write audit files when opts.auditsDir is omitted (backward compat)', () => {
+    const tree = twoTaskTree();
+    tree.root.children[0].review = ['art-x'];
+    tree.root.children[0].status = 'review-pending';
+    tree.root.children[0].evidence = [
+      { ts: 't', iteration: 1, criterion_index: 0, file: 'x', line: null, commit: null, command: null, exit_code: null, note: 'n' },
+    ];
+    const state = mkState('s.t1');
+    const tags = [{ kind: 'audit-verdict', agent: 'art-x', status: 'GO', text: 'ok' }];
+
+    // No opts → no audit files written; behavior identical to pre-Phase-7.
+    const result = applyMutations(tree, state, tags, '2026-05-09T01:00:00.000Z');
+    expect(result.tree.root.children[0].status).toBe('achieved');
   });
 });
