@@ -304,11 +304,20 @@ Your job is to **convert that file into the goal-mode schema**, NOT to design a 
 
 1. **Read the file at \`/Users/example/project/docs/plans/2026-05-09-mvp-roadmap.md\` completely.** Use the Read tool. Read every line, every heading, every table, every callout. If the file is over 2000 lines, page through it; do not stop at the first page. If it doesn't exist or is empty, abort and tell the user.
 
-2. **DO NOT write a generator script. DO NOT hedge about scale.** The user explicitly forbids this shortcut. Output \`tree.json\` and \`plan.md\` DIRECTLY via the Write tool, even if the result is 50KB or 200KB or larger. The Write tool handles large files. Token cost is the cost of the task; do not optimize it away by emitting a Node/Python script that produces template output. Generator scripts lose fidelity with the source plan (they produce regular, templated nodes; the user's plan has irregular, hand-authored nuance per section).
+2. **Output spec: ALL THREE files in this single turn. ONE Write per file. No Edit chains.**
 
-   Forbidden phrases in your response: "this is a large Write but doable", "let me write a generator", "given the scale...", "I'll start with a few tasks and continue", "this might take multiple turns". Do not narrate scale concerns. Do not hedge. The user has already accepted the cost of the task by invoking \`/goal:plan-from-file\` on a 1000+ line file. Just emit the Write calls.
+   By the end of this turn, all three files MUST exist on disk:
+   - \`.claude/goals/active/tree.json\`
+   - \`.claude/goals/active/plan.md\`
+   - \`.claude/goals/active/state.json\`
 
-   If the conversion is genuinely too large for one turn, write what fits, save the file, and on the next turn extend it via Edit. Never replace tasks with placeholders like "Task 47: TBD". Every emitted task must be faithful to the source.
+   Use ONE Write tool call per file. Three Writes total. Do not split \`tree.json\` across multiple Edit calls. Do not write Sprint 0 first and "continue adding sprints in the next turn." That is the failure mode the user explicitly forbids — it produces incomplete state and breaks \`/goal:approve-plan\`. The Write tool handles files of 100KB, 200KB, 500KB+ without issue. Token cost is the cost of the task.
+
+   **DO NOT** write a generator script (Node, Python, bash, etc.) that produces these files. The user explicitly forbids this shortcut. Generator scripts lose fidelity with the source plan: they produce regular, templated nodes; the user's plan has irregular, hand-authored nuance per section.
+
+   **DO NOT** hedge about scale. Forbidden phrases in your response (banned by exact wording): "this is a large Write but doable", "let me write a generator", "given the scale...", "I'll start with a few tasks and continue", "this might take multiple turns", "I'll continue adding sprints across multiple Edit calls", "Sprint 0 written, now adding Sprint 1 via Edit". Just emit the Write calls.
+
+   If you genuinely cannot fit the entire \`tree.json\` in one Write because of context exhaustion, that is a context-budget failure on your end, not a license to split. Tell the user explicitly that you ran out of context after writing N sprints, ask them to start a fresh session with more budget. Never leave the file in a state where \`/goal:approve-plan\` would fail (incomplete sprints, missing tasks, dangling commas).
 
 3. **The file is the authority.** Do not invent tasks the file does not mention. Do not drop tasks the file does include. The user wrote that plan deliberately; preserve their intent.
 

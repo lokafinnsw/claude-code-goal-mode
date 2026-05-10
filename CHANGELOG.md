@@ -4,6 +4,22 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.7] — 2026-05-10
+
+### Fixed
+
+- **`/goal:plan-from-file` agent skipped two of three required output files and split `tree.json` across multi-turn Edit chains.** Real failure case from the wild on a 1394-line, 9-sprint plan: agent wrote only `.claude/goals/active/tree.json` (84KB, well-formed Sprint 0 + Sprint 1, ~44 + ~50 tasks each). It did NOT write `.claude/goals/active/plan.md` or `.claude/goals/active/state.json` (both required by the spec). It also said "Sprint 0 written, now adding Sprint 1 via Edit. I'll continue adding sprints across multiple Edit calls" — picking the slow iterative path when ONE Write per file would have completed the conversion. After the run, `/goal:approve-plan` would have failed (incomplete state, missing files). Fix: `prompts/plan-from-file.md` Hard Rule #2 now mandates ALL THREE files in this single turn (one Write per file, three Writes total, no Edit chains), bans the new specific hedging phrases ("I'll continue adding sprints across multiple Edit calls", "Sprint 0 written, now adding Sprint 1 via Edit"), and clarifies the multi-turn fallback: only declare context exhaustion explicitly, never silently leave the file in a state where `/goal:approve-plan` would fail. (`prompts/plan-from-file.md`, `tests/__snapshots__/continuation.test.mjs.snap`)
+
+### Added
+
+- **5 prompt-content smoke assertions in `tests/continuation.test.mjs`** so a future weakening edit fails LOUD instead of degrading silently. Asserts the prompt mandates all three files, forbids generator scripts, forbids multi-turn Edit chains and exact hedging strings ("this is a large Write but doable", "I'll continue adding sprints across multiple Edit calls", "Sprint 0 written, now adding Sprint 1 via Edit"), mandates "ONE Write per file / Three Writes total", and forbids leaving the file in a state where approve-plan fails. Test count: 283 → 288. (`tests/continuation.test.mjs`)
+
+### Notes
+
+This is a behavioral mandate test, not just a green CI signal. It was added in response to user feedback: "не просто прогнать, что тесты зеленые, а нормальную проверку — smoke! чтобы отловить все косяки!" The smoke covers: regression on the prompt's behavioral contract.
+
+[1.1.7]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.7
+
 ## [1.1.6] — 2026-05-10
 
 ### Added

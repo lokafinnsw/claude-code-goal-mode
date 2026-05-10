@@ -270,6 +270,44 @@ describe('plan-from-file.md snapshot render', () => {
   });
 });
 
+// Smoke assertions: catch regressions where a future edit silently weakens
+// the agent's behavioral mandates. These ran into a real failure case where
+// the agent (1) wrote only tree.json out of three required files, (2) split
+// tree.json across multi-turn Edit chains, (3) hedged with "doable" /
+// "given the scale...". The prompt now hard-bans those patterns; if any of
+// these strings disappear from the prompt, this test fails LOUD.
+describe('plan-from-file.md content mandates', () => {
+  const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/plan-from-file.md'), 'utf8');
+
+  it('mandates all three files in one turn', () => {
+    expect(tpl).toMatch(/all three files MUST exist/i);
+    expect(tpl).toContain('tree.json');
+    expect(tpl).toContain('plan.md');
+    expect(tpl).toContain('state.json');
+  });
+
+  it('forbids generator scripts', () => {
+    // Markdown bold means "DO NOT" may appear as **DO NOT** with chars between.
+    expect(tpl).toMatch(/DO NOT[\s\S]{0,20}write a generator script/);
+  });
+
+  it('forbids multi-turn Edit chains and exact hedging phrases', () => {
+    expect(tpl).toMatch(/no Edit chains/i);
+    expect(tpl).toContain('this is a large Write but doable');
+    expect(tpl).toContain("I'll continue adding sprints across multiple Edit calls");
+    expect(tpl).toContain("Sprint 0 written, now adding Sprint 1 via Edit");
+  });
+
+  it('mandates ONE Write per file, three Writes total', () => {
+    expect(tpl).toMatch(/ONE Write per file/i);
+    expect(tpl).toMatch(/Three Writes total/i);
+  });
+
+  it('forbids leaving the file in a state where approve-plan would fail', () => {
+    expect(tpl).toMatch(/dangling commas|incomplete sprints|missing tasks/i);
+  });
+});
+
 describe('audit-instructions.md snapshot', () => {
   it('renders with criteria, evidence (with nested file/line), and validate', () => {
     const tpl = readFileSync(path.join(import.meta.dirname, '../prompts/audit-instructions.md'), 'utf8');
