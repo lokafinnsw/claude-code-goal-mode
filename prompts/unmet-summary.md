@@ -8,8 +8,8 @@ The plan-tree could not be advanced past task **{{blocked_task_id}}** ("{{blocke
 
 ## What this means
 
-- The engine has stopped advancing the cursor and will not invoke you again for this goal until `/goal:clear` (which archives this run and clears `.claude/goals/active/`).
-- The user can manually intervene via `/goal:approve` if they judge the work to be acceptable, or restructure the plan-tree and run `/goal:plan` to start a new attempt.
+- The engine has stopped advancing the cursor and will not invoke you again for this goal until `/goal-clear` (which archives this run and clears `.claude/goals/active/`).
+- The user can manually intervene via `/goal-approve` if they judge the work to be acceptable, or restructure the plan-tree and run `/goal-plan` to start a new attempt.
 - This is NOT a bug in the engine. It is the engine refusing to declare success when the evidence does not support it. "Proxy-signal collapse" is the explicit failure mode being prevented.
 
 ## Final state
@@ -32,4 +32,4 @@ The plan-tree could not be advanced past task **{{blocked_task_id}}** ("{{blocke
 2. Surface a 3–5 sentence summary to chat so the user understands the failure: which task blocked, what the blocker was, what they reviewed (cite verdicts if any), and whether the failure is recoverable (rewrite criteria, change reviewer, etc.) or terminal.
 3. Do NOT emit `<task-status>achieved</task-status>` for any node. The engine has already terminated this run; emitting evidence will not restart it.
 
-After this turn, run `/goal:clear --archive` to snapshot and reset.
+After this turn, run `/goal-clear --archive` to snapshot and reset.

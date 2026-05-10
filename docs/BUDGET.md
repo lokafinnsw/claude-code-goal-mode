@@ -1,7 +1,7 @@
 # Budget — the triple-budget loop
 
 This is the 1.0.0 reference for goal-mode's three-axis budget. The user
-sets the caps at `/goal:start`; the engine re-checks all three on every
+sets the caps at `/goal-start`; the engine re-checks all three on every
 Stop-hook turn; whichever axis hits its cap first triggers a graceful exit.
 
 For the schema field shapes see [PLAN-FORMAT.md](./PLAN-FORMAT.md). For
@@ -116,7 +116,7 @@ Each axis treats `max=0` as "no limit on that axis"
 "only iterations matter" or "only wall-clock matters":
 
 ```text
-/goal:start --max-iter 100 --token-budget 0 --time-budget 0
+/goal-start --max-iter 100 --token-budget 0 --time-budget 0
 ```
 
 The above gives a hard 100-iteration cap with no token or wall-clock
@@ -152,7 +152,7 @@ first run.
 ### Small — single-feature, ≤5 tasks
 
 ```text
-/goal:start --max-iter 30 --token-budget 500000 --time-budget 1h
+/goal-start --max-iter 30 --token-budget 500000 --time-budget 1h
 ```
 
 For a tightly-scoped change: one or two files, no review-gate, validation
@@ -162,7 +162,7 @@ turns each.
 ### Medium — sprint-shaped, ~15 tasks
 
 ```text
-/goal:start --max-iter 100 --token-budget 2000000 --time-budget 4h
+/goal-start --max-iter 100 --token-budget 2000000 --time-budget 4h
 ```
 
 These are the defaults. Suits a coherent sprint: ~15 tasks, a handful of
@@ -171,7 +171,7 @@ review-gates, validate commands per task. Most goals fit here.
 ### Large — multi-sprint, ~50+ tasks
 
 ```text
-/goal:start --max-iter 300 --token-budget 8000000 --time-budget 12h
+/goal-start --max-iter 300 --token-budget 8000000 --time-budget 12h
 ```
 
 For a multi-sprint plan that you intend to leave running overnight or
@@ -180,10 +180,10 @@ wall-clock — pause/resume does not extend the cap.
 
 ### Plan-bootstrap suggestion
 
-`/goal:plan` itself prints a suggested budget at the end of the bootstrap
+`/goal-plan` itself prints a suggested budget at the end of the bootstrap
 turn (`prompts/plan-bootstrap.md:62-64`):
 
-> Suggested budget for `/goal:start`: based on task count, estimate
+> Suggested budget for `/goal-start`: based on task count, estimate
 > (max-iter ≈ tasks × 4, token-budget ≈ tasks × 50000, time-budget ≈
 > tasks × 30 minutes; round up).
 
@@ -260,12 +260,12 @@ ends.
 
 The user has two choices:
 
-- **`/goal:resume`** — refuses if any budget axis is still exhausted.
+- **`/goal-resume`** — refuses if any budget axis is still exhausted.
   Bumping the budget requires either editing `state.json` directly or
-  using `/goal:start --force` to restart the budget counter (which
+  using `/goal-start --force` to restart the budget counter (which
   preserves cursor and tree but resets `started_at`, `iterations.used`,
   and rebases the wall-clock).
-- **`/goal:clear --archive`** — snapshots the goal to
+- **`/goal-clear --archive`** — snapshots the goal to
   `.claude/goals/archive/` and starts fresh.
 
 ## 8. Defensive against corrupt state
@@ -284,7 +284,7 @@ treated as "no limit" — the engine refuses to crash on hand-edited state.
 This is intentional, but it is documented behaviour: future readers
 should not assume the wall-clock check always fires. The companion helper
 `wallclockMinutes` (`engine/wallclock.mjs:17-21`) clamps to 0 minutes
-elapsed under the same condition, so `/goal:status` and the continuation
+elapsed under the same condition, so `/goal-status` and the continuation
 prompts also tolerate corrupt timestamps.
 
 Schema-level corruption of `state.json` (entire fields missing,
@@ -293,7 +293,7 @@ type-mismatched) is caught earlier at `loadState` time
 `state.json.broken-<ts>-<seq>` for forensic recovery and `loadState`
 returns `null`, which makes the Stop hook silently exit at
 `engine/stop-hook.mjs:113`. The loop ends; the user notices on the next
-`/goal:status`.
+`/goal-status`.
 
 ## 9. See also
 

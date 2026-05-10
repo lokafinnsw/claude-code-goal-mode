@@ -19,4 +19,4 @@ Every leaf task in this plan is now `achieved`. This is the final summary turn.
 2. List one-line per achieved task, grouped by sprint, with the most informative evidence note for each.
 3. Output the same content to chat so the user sees it.
 
-After this turn, the goal lifecycle is `achieved`. Run `/goal:clear --archive` to snapshot and reset.
+After this turn, the goal lifecycle is `achieved`. Run `/goal-clear --archive` to snapshot and reset.

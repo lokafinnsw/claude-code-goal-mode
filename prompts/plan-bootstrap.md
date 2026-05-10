@@ -52,7 +52,7 @@ Write TWO files in `.claude/goals/active/`:
 
 ### `tree.json` (machine, zod-valid)
 
-Same hierarchy in JSON matching the GoalTreeSchema. Set every node's `status: "pending"`, empty `evidence: []`, `review_attempts: 0`, etc. Set `schema_version: 1`. Set `goal_id` to a slug of the mission. Set `created_at` to now ISO. Set `approved_at: null` (will be filled by `/goal:approve-plan`).
+Same hierarchy in JSON matching the GoalTreeSchema. Set every node's `status: "pending"`, empty `evidence: []`, `review_attempts: 0`, etc. Set `schema_version: 1`. Set `goal_id` to a slug of the mission. Set `created_at` to now ISO. Set `approved_at: null` (will be filled by `/goal-approve-plan`).
 
 ## After writing both files
 
@@ -60,8 +60,8 @@ Tell the user, in chat:
 1. The counts: how many sprints, epics, tasks.
 2. The work fronts you used.
 3. The reviewers you proposed (and which ones are unavailable in this environment).
-4. Suggested budget for `/goal:start`: based on task count, estimate (max-iter ≈ tasks × 4, token-budget ≈ tasks × 50000, time-budget ≈ tasks × 30 minutes; round up).
-5. Ask them to read `plan.md`, edit if needed, then run `/goal:approve-plan`.
+4. Suggested budget for `/goal-start`: based on task count, estimate (max-iter ≈ tasks × 4, token-budget ≈ tasks × 50000, time-budget ≈ tasks × 30 minutes; round up).
+5. Ask them to read `plan.md`, edit if needed, then run `/goal-approve-plan`.
 
 Mission to plan:
 

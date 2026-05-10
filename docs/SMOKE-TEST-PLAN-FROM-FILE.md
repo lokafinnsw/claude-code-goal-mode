@@ -1,6 +1,6 @@
-# Smoke test: `/goal:plan-from-file`
+# Smoke test: `/goal-plan-from-file`
 
-This document is the manual smoke-test recipe for the `/goal:plan-from-file` slash command. Run this against a real edge-case plan file (1000+ lines, 5+ sprints) before declaring a `plan-from-file.md` prompt change "shipped". The unit tests (`tests/continuation.test.mjs` content-mandate assertions, snapshot tests) catch prompt-regression at the string level. This recipe catches behavioral regression at the runtime level: does the agent actually do what the prompt says.
+This document is the manual smoke-test recipe for the `/goal-plan-from-file` slash command. Run this against a real edge-case plan file (1000+ lines, 5+ sprints) before declaring a `plan-from-file.md` prompt change "shipped". The unit tests (`tests/continuation.test.mjs` content-mandate assertions, snapshot tests) catch prompt-regression at the string level. This recipe catches behavioral regression at the runtime level: does the agent actually do what the prompt says.
 
 ## Why this exists
 
@@ -8,7 +8,7 @@ A real failure case from 2026-05-10:
 
 1. v1.1.4 prompt: agent saw 1394-line, 9-sprint plan and decided `"I'll write a Node generator script. This keeps my output token usage tractable."` Wrote a script; produced templated nodes; lost source-plan fidelity.
 2. v1.1.5 forbade generator scripts. v1.1.6 banned hedging strings.
-3. v1.1.6 prompt: agent stopped writing scripts (good) but still hedged: `"I'll continue adding sprints across multiple Edit calls."` Wrote ONLY `tree.json`, missing `plan.md` and `state.json`. `/goal:approve-plan` would fail.
+3. v1.1.6 prompt: agent stopped writing scripts (good) but still hedged: `"I'll continue adding sprints across multiple Edit calls."` Wrote ONLY `tree.json`, missing `plan.md` and `state.json`. `/goal-approve-plan` would fail.
 4. v1.1.7 prompt: hard mandate "ALL THREE files in this single turn, ONE Write per file, no Edit chains".
 
 The unit tests (5 prompt-content assertions in `tests/continuation.test.mjs`) verify the prompt CONTAINS the mandates. But the UI test - does the agent actually obey them on a real edge case - is manual.
@@ -43,7 +43,7 @@ ls ~/.claude/plugins/cache/goal-mode/goal-mode/
 ### 3. Run the conversion
 
 ```
-/goal:plan-from-file path/to/edge-case-plan.md
+/goal-plan-from-file path/to/edge-case-plan.md
 ```
 
 ### 4. Watch for failure modes
@@ -56,7 +56,7 @@ While the agent runs, note any of:
 - [ ] **Forbidden phrase: "I'll continue adding sprints across multiple Edit calls"** / **"Sprint 0 written, now adding Sprint 1 via Edit"**. The exact pattern that v1.1.7 bans.
 - [ ] **Forbidden behavior: agent writes only `tree.json`, says it will continue later**. The 3-file mandate is violated; this is the top regression risk.
 - [ ] **Forbidden behavior: agent uses Edit calls to extend `tree.json` across multiple turns**. Either Write all sprints in one call, or explicitly declare context exhaustion. Multi-turn Edit chains are banned in v1.1.7.
-- [ ] **Forbidden behavior: agent uses `TBD` / `TODO` / placeholder strings**. v1.0.0 onwards rejects placeholders at `/goal:approve-plan`; the prompt should NOT emit them in the first place.
+- [ ] **Forbidden behavior: agent uses `TBD` / `TODO` / placeholder strings**. v1.0.0 onwards rejects placeholders at `/goal-approve-plan`; the prompt should NOT emit them in the first place.
 
 ### 5. Verify the output
 
@@ -88,12 +88,12 @@ jq -r '.lifecycle' .claude/goals/active/state.json
 # No placeholder strings escaped:
 grep -E '"(TBD|TODO|FIXME|XXX|\\?\\?\\?)"' .claude/goals/active/tree.json && echo "FAIL placeholders found" || echo "PASS no placeholders"
 
-# Run /goal:approve-plan to validate:
+# Run /goal-approve-plan to validate:
 ```
 
 In Claude Code:
 ```
-/goal:approve-plan
+/goal-approve-plan
 ```
 
 If validation passes (`lifecycle: draft -> approved`), the conversion is structurally correct. If it fails, the validation error names the offending node.
@@ -122,7 +122,7 @@ Output produced in the maintainer's review session (saved to `/tmp/goal-mode-smo
 | :-- | --: | --: | :-- |
 | `tree.json` | 297 | 89,565 | Sprint 0 fully (8 epics, 45 tasks), Sprint 1 fully (12 epics, 100 tasks), Sprint 2 partial (3 of 13 epics, 24 tasks). All tasks have hand-extracted acceptance_criteria + validate + review + work_front. |
 | `plan.md` | 305 | 14,734 | Sprint 0 expanded with full task definitions; Sprints 1-8 as epic-level tables (epic name + task count). Risk register highlights. Cross-cutting protocols. Out-of-scope list. |
-| `state.json` | 17 | 430 | `lifecycle: draft`, `schema_version: 1`, empty history. Ready for `/goal:approve-plan`. |
+| `state.json` | 17 | 430 | `lifecycle: draft`, `schema_version: 1`, empty history. Ready for `/goal-approve-plan`. |
 
 Both JSON files validated with `jq -e .`; no placeholder strings in either.
 

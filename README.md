@@ -20,9 +20,9 @@ OpenAI shipped Codex `/goal` in CLI 0.128.0 — set a verifiable objective and t
 
 ```bash
 # After installing:
-/goal:plan "Migrate auth from sessions to JWT, with tests and zero downtime"
-/goal:approve-plan
-/goal:start --max-iter 200 --token-budget 5000000 --time-budget 8h
+/goal-plan "Migrate auth from sessions to JWT, with tests and zero downtime"
+/goal-approve-plan
+/goal-start --max-iter 200 --token-budget 5000000 --time-budget 8h
 # Walk away. Come back to a finished feature, not a half-baked guess.
 ```
 
@@ -79,7 +79,7 @@ The agent never edits state files directly — it emits tags, the engine interpr
 
 ## Stack-agnostic by design
 
-The engine has zero hardcoded knowledge of which test framework, language, build tool, or review-agent name is in use. All such names are opaque strings declared in `tree.json` by the `/goal:plan` bootstrap phase, which surveys the project to decide what makes sense.
+The engine has zero hardcoded knowledge of which test framework, language, build tool, or review-agent name is in use. All such names are opaque strings declared in `tree.json` by the `/goal-plan` bootstrap phase, which surveys the project to decide what makes sense.
 
 | Project type | `validate` example | `review` example |
 |---|---|---|
@@ -96,16 +96,16 @@ The engine sees opaque strings and dispatches them. Adding goal-mode to a Rust, 
 
 | Command | Purpose |
 |---|---|
-| `/goal:plan <mission>` | Survey the project, build a Sprint → Epic → Task plan-tree from scratch (LLM bootstrap) with stack-appropriate `validate` commands and project-specific review agents. Lifecycle → `draft`. |
-| `/goal:plan-from-file <path>` | Convert an existing Markdown plan file into the goal-mode schema. Use when you already have a plan in Markdown (any layout). LLM parses your file, normalizes to Sprint → Epic → Task, extracts acceptance criteria + validate commands, writes `tree.json` + normalized `plan.md` + draft `state.json`. Lifecycle → `draft`. |
-| `/goal:approve-plan` | Validate the plan (schema, criteria coverage, placeholder scan). Lifecycle → `approved`. |
-| `/goal:start [--max-iter N] [--token-budget N] [--time-budget Nm\|Nh]` | Begin pursuing. Stop hook becomes active. |
-| `/goal:status` (or just `/goal`) | Render the plan-tree with status icons, cursor highlight, triple-budget bars, last events. |
-| `/goal:pause` / `/goal:resume` | Halt or resume the loop. Resume refuses if any budget is exhausted. |
-| `/goal:approve [--reason "..."]` | Manually issue a GO verdict for a `review-pending` task (when no suitable subagent is available). |
-| `/goal:abandon --reason "..."` | Lifecycle → `unmet` with a recorded reason. |
-| `/goal:clear [--archive]` | Remove the active goal (with optional snapshot to `.claude/goals/archive/<date>-<slug>/`). |
-| `/goal:help` | Show all commands and the mental model. |
+| `/goal-plan <mission>` | Survey the project, build a Sprint → Epic → Task plan-tree from scratch (LLM bootstrap) with stack-appropriate `validate` commands and project-specific review agents. Lifecycle → `draft`. |
+| `/goal-plan-from-file <path>` | Convert an existing Markdown plan file into the goal-mode schema. Use when you already have a plan in Markdown (any layout). LLM parses your file, normalizes to Sprint → Epic → Task, extracts acceptance criteria + validate commands, writes `tree.json` + normalized `plan.md` + draft `state.json`. Lifecycle → `draft`. |
+| `/goal-approve-plan` | Validate the plan (schema, criteria coverage, placeholder scan). Lifecycle → `approved`. |
+| `/goal-start [--max-iter N] [--token-budget N] [--time-budget Nm\|Nh]` | Begin pursuing. Stop hook becomes active. |
+| `/goal-status` (or just `/goal`) | Render the plan-tree with status icons, cursor highlight, triple-budget bars, last events. |
+| `/goal-pause` / `/goal-resume` | Halt or resume the loop. Resume refuses if any budget is exhausted. |
+| `/goal-approve [--reason "..."]` | Manually issue a GO verdict for a `review-pending` task (when no suitable subagent is available). |
+| `/goal-abandon --reason "..."` | Lifecycle → `unmet` with a recorded reason. |
+| `/goal-clear [--archive]` | Remove the active goal (with optional snapshot to `.claude/goals/archive/<date>-<slug>/`). |
+| `/goal-help` | Show all commands and the mental model. |
 
 ## Documentation
 
@@ -130,7 +130,7 @@ Pick **one** path. Don't run both — they register the Stop hook twice and the 
 /reload-plugins
 ```
 
-Verify: `/goal:help` should print the command list.
+Verify: `/goal-help` should print the command list.
 
 ### Path B — Claude Desktop / any env without `/plugin`
 
@@ -148,7 +148,7 @@ What `install.sh` does (idempotent — re-run after `git pull`):
 3. Adds the Stop hook to `~/.claude/settings.json` (preserving existing hooks/permissions; backs up original to `settings.json.bak-<ts>`).
 4. Adds path-pinned permissions for the repo's `scripts/*.sh` and `hooks/*.sh`.
 
-After install, restart Claude Desktop, then `/goal:help` should show the command list.
+After install, restart Claude Desktop, then `/goal-help` should show the command list.
 
 ### Switching between paths
 
@@ -198,12 +198,12 @@ Unrelated to goal-mode — they're failing hooks from a different plugin. They s
 
 ## Usage
 
-This section walks through the typical end-to-end flow. For per-command details, see `/goal:help`.
+This section walks through the typical end-to-end flow. For per-command details, see `/goal-help`.
 
 ### From scratch (you have a mission, no plan yet)
 
 ```
-/goal:plan "Migrate auth from sessions to JWT, with tests and zero downtime"
+/goal-plan "Migrate auth from sessions to JWT, with tests and zero downtime"
 ```
 
 The LLM surveys your project (stack, test runner, lint configs) and writes a Sprint > Epic > Task tree into `.claude/goals/active/`. Three files appear: `tree.json` (machine, zod-valid), `plan.md` (human-readable, normalized), `state.json` (lifecycle: draft).
@@ -211,13 +211,13 @@ The LLM surveys your project (stack, test runner, lint configs) and writes a Spr
 Open `.claude/goals/active/plan.md`. Edit anything you want changed. Then:
 
 ```
-/goal:approve-plan
+/goal-approve-plan
 ```
 
 This validates schema + per-task acceptance criteria + placeholder scan, and locks the plan (lifecycle: approved). Edit-and-retry is fine: validation errors print line-by-line, fix in `plan.md`, re-run.
 
 ```
-/goal:start --max-iter 200 --token-budget 5000000 --time-budget 8h
+/goal-start --max-iter 200 --token-budget 5000000 --time-budget 8h
 ```
 
 Lifecycle goes to `pursuing`. The Stop hook becomes active. Walk away.
@@ -227,7 +227,7 @@ Lifecycle goes to `pursuing`. The Stop hook becomes active. Walk away.
 If you already wrote a plan in Markdown, do not redo it. Convert it:
 
 ```
-/goal:plan-from-file docs/plans/2026-05-09-mvp-roadmap.md
+/goal-plan-from-file docs/plans/2026-05-09-mvp-roadmap.md
 ```
 
 The LLM reads your file end-to-end (every line, every heading, every table; it pages through if the file is over 2000 lines), maps headings to Sprint > Epic > Task (H1 mission, H2 sprint, H3 epic, H4 task is the default; any layout is mapped by depth), extracts acceptance criteria and validate commands where the file marks them, synthesizes them where it does not (every task needs at least one criterion), and writes the same three files. The LLM does NOT write a generator script for this (the prompt explicitly forbids that shortcut); it emits the schema directly via the Write tool, even if the result is 100KB+.
@@ -235,23 +235,23 @@ The LLM reads your file end-to-end (every line, every heading, every table; it p
 After conversion, open the normalized `plan.md`, fix any `TBD` / `TODO` / `FIXME` placeholders the source file had (the engine rejects those at approve time), then:
 
 ```
-/goal:approve-plan
-/goal:start [flags]
+/goal-approve-plan
+/goal-start [flags]
 ```
 
 ### While the goal is pursuing
 
 ```
-/goal:status
+/goal-status
 ```
 
 Or just `/goal`. Renders the tree with status icons, cursor highlight, three budget bars (iterations / tokens / wall-clock), last 10 history events.
 
 ```
-/goal:pause
+/goal-pause
 ```
 
-Halts the loop. Stop hook stays registered but emits no continuation. Resume with `/goal:resume` (refuses if any budget is exhausted).
+Halts the loop. Stop hook stays registered but emits no continuation. Resume with `/goal-resume` (refuses if any budget is exhausted).
 
 ### Review gates
 
@@ -260,7 +260,7 @@ A task with `review: ["aaa-art-director", "rpg-game-designer"]` enters `review-p
 If a reviewer subagent does not exist locally:
 
 ```
-/goal:approve --reason "manual GO: <evidence>"
+/goal-approve --reason "manual GO: <evidence>"
 ```
 
 Issues a manual GO verdict for the current `review-pending` task.
@@ -268,13 +268,13 @@ Issues a manual GO verdict for the current `review-pending` task.
 ### Stopping
 
 ```
-/goal:abandon --reason "scope changed"
+/goal-abandon --reason "scope changed"
 ```
 
 Lifecycle goes to `unmet`. The reason is recorded in history.
 
 ```
-/goal:clear --archive
+/goal-clear --archive
 ```
 
 Snapshots the current goal to `.claude/goals/archive/<date>-<slug>/` and removes the active dir. Without `--archive`, deletes outright.
@@ -285,7 +285,7 @@ The engine writes to `.claude/goals/active/`:
 
 | File | Purpose |
 | :-- | :-- |
-| `tree.json` | The plan as data. Read every turn. Never mutated after `/goal:approve-plan`. |
+| `tree.json` | The plan as data. Read every turn. Never mutated after `/goal-approve-plan`. |
 | `plan.md` | The plan as Markdown. Source of truth for human review. |
 | `state.json` | Lifecycle, cursor, budget tally, history. Atomically rewritten every Stop. |
 | `notes.md` | Append-only digest of every turn's progress. |

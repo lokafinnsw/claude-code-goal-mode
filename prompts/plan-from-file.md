@@ -19,13 +19,13 @@ Your job is to **convert that file into the goal-mode schema**, NOT to design a 
    - `.claude/goals/active/plan.md`
    - `.claude/goals/active/state.json`
 
-   Use ONE Write tool call per file. Three Writes total. Do not split `tree.json` across multiple Edit calls. Do not write Sprint 0 first and "continue adding sprints in the next turn." That is the failure mode the user explicitly forbids — it produces incomplete state and breaks `/goal:approve-plan`. The Write tool handles files of 100KB, 200KB, 500KB+ without issue. Token cost is the cost of the task.
+   Use ONE Write tool call per file. Three Writes total. Do not split `tree.json` across multiple Edit calls. Do not write Sprint 0 first and "continue adding sprints in the next turn." That is the failure mode the user explicitly forbids — it produces incomplete state and breaks `/goal-approve-plan`. The Write tool handles files of 100KB, 200KB, 500KB+ without issue. Token cost is the cost of the task.
 
    **DO NOT** write a generator script (Node, Python, bash, etc.) that produces these files. The user explicitly forbids this shortcut. Generator scripts lose fidelity with the source plan: they produce regular, templated nodes; the user's plan has irregular, hand-authored nuance per section.
 
    **DO NOT** hedge about scale. Forbidden phrases in your response (banned by exact wording): "this is a large Write but doable", "let me write a generator", "given the scale...", "I'll start with a few tasks and continue", "this might take multiple turns", "I'll continue adding sprints across multiple Edit calls", "Sprint 0 written, now adding Sprint 1 via Edit". Just emit the Write calls.
 
-   If you genuinely cannot fit the entire `tree.json` in one Write because of context exhaustion, that is a context-budget failure on your end, not a license to split. Tell the user explicitly that you ran out of context after writing N sprints, ask them to start a fresh session with more budget. Never leave the file in a state where `/goal:approve-plan` would fail (incomplete sprints, missing tasks, dangling commas).
+   If you genuinely cannot fit the entire `tree.json` in one Write because of context exhaustion, that is a context-budget failure on your end, not a license to split. Tell the user explicitly that you ran out of context after writing N sprints, ask them to start a fresh session with more budget. Never leave the file in a state where `/goal-approve-plan` would fail (incomplete sprints, missing tasks, dangling commas).
 
 3. **The file is the authority.** Do not invent tasks the file does not mention. Do not drop tasks the file does include. The user wrote that plan deliberately; preserve their intent.
 
@@ -50,7 +50,7 @@ Your job is to **convert that file into the goal-mode schema**, NOT to design a 
 7. **Review-agent extraction.** Look for:
    - Lines like `**Review:**` or `**Reviewers:**` or `**Audit:**`.
    - Visual/UX/security/performance tasks SHOULD have `review: [...]`. Infer from content if not explicit.
-   - Pick reviewer names from `~/.claude/{skills,agents}/` and `<cwd>/.claude/{skills,agents}/` — only declare reviewers that exist locally; for unavailable ones, leave as TODO with a note in chat (the user can enable manual override via `/goal:approve` later).
+   - Pick reviewer names from `~/.claude/{skills,agents}/` and `<cwd>/.claude/{skills,agents}/` — only declare reviewers that exist locally; for unavailable ones, leave as TODO with a note in chat (the user can enable manual override via `/goal-approve` later).
 
 8. **Work-front extraction.** Look for:
    - `**Work front:**` or `**Track:**` annotations.
@@ -65,11 +65,11 @@ Write THREE files in `.claude/goals/active/`:
 
 ### `tree.json` (machine, zod-valid)
 
-Match the goal-mode schema. Set every node's `status: "pending"`, empty `evidence: []`, `review_attempts: 0`, etc. Set `schema_version: 1`. Set `goal_id` to a kebab-case slug derived from the file's H1 mission or the filename. Set `mission` to the H1 mission text (one-line). Set `created_at` to now ISO. Set `approved_at: null` (will be set by `/goal:approve-plan`).
+Match the goal-mode schema. Set every node's `status: "pending"`, empty `evidence: []`, `review_attempts: 0`, etc. Set `schema_version: 1`. Set `goal_id` to a kebab-case slug derived from the file's H1 mission or the filename. Set `mission` to the H1 mission text (one-line). Set `created_at` to now ISO. Set `approved_at: null` (will be set by `/goal-approve-plan`).
 
 ### `plan.md` (human-readable, normalized)
 
-Re-emit the plan in the goal-mode convention from `docs/PLAN-FORMAT.md`. This is a NORMALIZED copy — same content, but with consistent heading levels and field labels so `/goal:status` and the round-trip work cleanly. The user's original file is the authority; do not overwrite it.
+Re-emit the plan in the goal-mode convention from `docs/PLAN-FORMAT.md`. This is a NORMALIZED copy — same content, but with consistent heading levels and field labels so `/goal-status` and the round-trip work cleanly. The user's original file is the authority; do not overwrite it.
 
 ```markdown
 # Mission: <one-line>
@@ -115,7 +115,7 @@ Minimal draft state. Match `engine/state.mjs::GoalStateSchema`:
 }
 ```
 
-`cursor` and `session_id` will be replaced by real values when `/goal:start` runs.
+`cursor` and `session_id` will be replaced by real values when `/goal-start` runs.
 
 ## After writing all three files
 
@@ -125,7 +125,7 @@ Tell the user, in chat:
 2. **Conversion summary** — how many sprints / epics / tasks were extracted.
 3. **Schema deviations** — if the source file lacked acceptance criteria for some tasks and you synthesized them, list which tasks got synthesized criteria so the user can review.
 4. **Reviewer availability** — which reviewer names you picked vs which were left as TODO because they're not in `~/.claude/{skills,agents}/`.
-5. **Suggested budget for `/goal:start`** — based on task count: max-iter ≈ tasks × 4, token-budget ≈ tasks × 50000, time-budget ≈ tasks × 30 minutes; round up.
-6. **Next step** — ask the user to read `.claude/goals/active/plan.md` (the normalized version), edit if needed, then run `/goal:approve-plan`.
+5. **Suggested budget for `/goal-start`** — based on task count: max-iter ≈ tasks × 4, token-budget ≈ tasks × 50000, time-budget ≈ tasks × 30 minutes; round up.
+6. **Next step** — ask the user to read `.claude/goals/active/plan.md` (the normalized version), edit if needed, then run `/goal-approve-plan`.
 
-Do NOT run `/goal:approve-plan` yourself; that's the user's gate.
+Do NOT run `/goal-approve-plan` yourself; that's the user's gate.

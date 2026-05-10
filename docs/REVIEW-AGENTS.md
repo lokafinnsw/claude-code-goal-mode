@@ -77,11 +77,11 @@ Empty `review[]` (or omitting the line in `plan.md`) means **no review-gate**
 — the task advances on its own as soon as criteria are covered
 (`engine/apply-mutations.mjs:147-151`).
 
-## 3. Discovery — what `/goal:approve-plan` checks
+## 3. Discovery — what `/goal-approve-plan` checks
 
 The plugin tries to give the user advance warning when they declare a
 reviewer that is not installed in the current environment.
-`/goal:approve-plan` calls `discoverReviewers()` at
+`/goal-approve-plan` calls `discoverReviewers()` at
 `engine/approve-plan-cli.mjs:29-40`, which reads each of:
 
 - `~/.claude/skills/`
@@ -104,10 +104,10 @@ keep agents in non-default locations, behind dynamic loaders, or invoke them
 with a different name than the directory. A hard refusal would force the
 user to fight the validator. The plan author is expected to read the
 warnings and either (a) fix the name in `plan.md` and re-run
-`/goal:approve-plan`, or (b) accept the warning and manually approve at
-runtime via `/goal:approve` (see §4).
+`/goal-approve-plan`, or (b) accept the warning and manually approve at
+runtime via `/goal-approve` (see §4).
 
-## 4. Manual override — `/goal:approve`
+## 4. Manual override — `/goal-approve`
 
 When a required reviewer is unavailable in the user's environment (or the
 agent emits a NOGO that the user disagrees with after manual inspection),
@@ -135,7 +135,7 @@ Behaviour:
 CLI usage:
 
 ```text
-/goal:approve --reason "reviewer not installed in this environment"
+/goal-approve --reason "reviewer not installed in this environment"
 ```
 
 The `--reason` text is preserved in the audit file and the history payload.
@@ -146,7 +146,7 @@ approve when a `subagent_type` is unavailable — see
 
 > If a requested reviewer's `subagent_type` is unavailable in this
 > environment, emit `<audit-verdict agent="<reviewer>"
-> status="REVISE">unavailable; user must run /goal:approve</audit-verdict>`
+> status="REVISE">unavailable; user must run /goal-approve</audit-verdict>`
 > so the user is asked to manually approve.
 
 ## 5. Three concrete examples
@@ -229,7 +229,7 @@ what to dispatch; the user wires the actual reviewer behind the
 `subagent_type`.
 
 The price is that bad names slip past the validator. The `discoverReviewers`
-warning at `/goal:approve-plan` time and the manual-approve fallback at
+warning at `/goal-approve-plan` time and the manual-approve fallback at
 runtime are both there because of this trade-off.
 
 The opacity also means the engine has zero say in **what** the reviewer
@@ -247,4 +247,4 @@ asks them to map evidence to criteria and rule GO / NOGO / REVISE
 - [ANTI-PATTERNS.md](./ANTI-PATTERNS.md) — proxy-signal collapse and the
   NOGO/REVISE oscillation defense (3-cycle escalation).
 - [SMOKE-TEST.md](./SMOKE-TEST.md) §9 — manual recipe for exercising the
-  review-gate end-to-end, including the `/goal:approve` manual override.
+  review-gate end-to-end, including the `/goal-approve` manual override.

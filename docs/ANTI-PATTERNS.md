@@ -74,7 +74,7 @@ inputs A, B, C" to "function compiles"), then declares achievement.
 has file-write capability, the path of least resistance is to weaken the
 spec rather than meet it.
 
-**Defense.** The plan tree is **locked** at `/goal:approve-plan`
+**Defense.** The plan tree is **locked** at `/goal-approve-plan`
 (`engine/approve-plan-cli.mjs:94-118`). `applyMutations` does not modify
 `node.acceptance_criteria` anywhere — its mutation surface covers only
 runtime fields (`status`, `evidence`, `review_attempts`,
@@ -94,7 +94,7 @@ empty `id` or `title`) causes the broken file to be preserved as
 
 **Recovery if it slips through.** A semantically-bad edit that still
 passes the schema (e.g., the agent rewrites a criterion's text to be
-trivial) is not caught at load time. The user notices on `/goal:status`
+trivial) is not caught at load time. The user notices on `/goal-status`
 or by reading `plan.md` and reverts the edit before re-running. This
 is the design spec's R2 residual risk — the review-gate is the
 defense-in-depth.
@@ -178,7 +178,7 @@ at `engine/apply-mutations.mjs:240-248` transitions
 **Recovery if it slips through.** It cannot — the counter is
 authoritative. If the user wants to give the agent more attempts, they
 can manually edit `state.json` to reset `review_attempts` (against the
-recommendation) or use `/goal:approve --reason "..."` to manually
+recommendation) or use `/goal-approve --reason "..."` to manually
 override the verdict (`engine/manual-approve.mjs:60-140`).
 
 ## 7. Cursor regression / state corruption attacks
@@ -206,10 +206,10 @@ silently overwritten and forensic data lost.
 
 **Recovery if it slips through.** A semantically-bad but
 schema-conforming edit (e.g., `cursor` rolled back to a prior task) is
-not caught at load time. The user notices on `/goal:status` (which
+not caught at load time. The user notices on `/goal-status` (which
 shows the cursor and last 3 history events) or by reading `notes.md`.
 Recovery is: edit `state.json` back to a sensible cursor, or run
-`/goal:clear --archive` and start fresh.
+`/goal-clear --archive` and start fresh.
 
 ## 8. Budget evasion
 
@@ -248,7 +248,7 @@ session's mutations.
 **Why it happens.** Hooks are project-scoped. Multiple `claude` sessions
 in the same project all run the same hooks.
 
-**Defense.** `state.session_id` is pinned at `/goal:start` time
+**Defense.** `state.session_id` is pinned at `/goal-start` time
 (`engine/start-goal.mjs:60`). Every Stop-hook turn compares the stored
 session id to the hook's stdin payload session id at
 `engine/stop-hook.mjs:114`:
@@ -263,13 +263,13 @@ originating session drives the goal.
 **Recovery if it slips through.** It cannot — the session-id check is
 strict. If the user wants to drive the goal from a new session, they
 either manually edit `state.session_id` to the new session's id, or
-run `/goal:start --force` (`engine/start-goal-cli.mjs:38`,
+run `/goal-start --force` (`engine/start-goal-cli.mjs:38`,
 `engine/start-goal.mjs:40-45`) to re-pin the session.
 
 ## 10. Mid-run plan re-approval
 
 **What it is.** While the goal is `pursuing`, the user accidentally
-runs `/goal:approve-plan` again. Naively this would reset
+runs `/goal-approve-plan` again. Naively this would reset
 `tree.approved_at` and clobber `state.lifecycle` back to `approved`,
 losing the cursor and history.
 
@@ -292,7 +292,7 @@ if (existingState && existingState.lifecycle !== 'draft' && existingState.lifecy
 
 Approve from `pursuing`, `paused`, `achieved`, `unmet`, or
 `budget-limited` is rejected with an explicit error pointing the user
-at `/goal:clear --archive` if they really want to start over.
+at `/goal-clear --archive` if they really want to start over.
 
 **Recovery if it slips through.** It cannot — the gate is closed before
 any state mutation occurs. If the user wants to fix a typo in the plan

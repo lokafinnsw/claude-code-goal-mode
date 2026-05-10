@@ -38,4 +38,4 @@ After you finish, both `.claude/goals/active/plan.md` and `.claude/goals/active/
 }
 ```
 
-The `cursor` and `session_id` placeholders ("pending") will be replaced by real values when the user runs `/goal:start` (which sets them to the first pending task id and the Claude Code session id, respectively). `/goal:start` will populate budget caps and started_at; `/goal:approve-plan` will set `lifecycle="approved"`.
+The `cursor` and `session_id` placeholders ("pending") will be replaced by real values when the user runs `/goal-start` (which sets them to the first pending task id and the Claude Code session id, respectively). `/goal-start` will populate budget caps and started_at; `/goal-approve-plan` will set `lifecycle="approved"`.

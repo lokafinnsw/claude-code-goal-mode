@@ -4,6 +4,20 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.9] — 2026-05-10
+
+### Fixed
+
+- **`CLAUDE_PLUGIN_ROOT: unbound variable` crash in all 8 shim scripts when run from Claude Desktop.** Real failure case from the wild: user clicked `/goal-approve-plan` in Desktop, install.sh-deployed `~/.claude/commands/goal-approve-plan.md` invoked `/Users/.../scripts/approve-plan.sh`, the shim said `node "${CLAUDE_PLUGIN_ROOT}/engine/approve-plan-cli.mjs"` and crashed. Root cause: Claude Code CLI's plugin loader sets `CLAUDE_PLUGIN_ROOT` env var when invoking plugin commands; Claude Desktop has no plugin loader so the env var is unset; the script's `set -u` then explodes. Fix: each of the 8 shims (`abandon-goal.sh`, `approve-plan.sh`, `approve.sh`, `clear-goal.sh`, `pause-goal.sh`, `resume-goal.sh`, `start-goal.sh`, `status-goal.sh`) and the `hooks/stop-hook.sh` now have a defensive default that derives `CLAUDE_PLUGIN_ROOT` from `BASH_SOURCE` if the env var is unset: `: "${CLAUDE_PLUGIN_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"`. CLI mode: env var stays as set by loader, default ignored. Desktop mode: derives from script's own location (always `<plugin-root>/scripts/X.sh` so `dirname/..` resolves to plugin-root). Verified: all 8 shims now succeed (showing functional "no active goal" messages) when invoked without `CLAUDE_PLUGIN_ROOT`. (`scripts/*.sh`, `hooks/stop-hook.sh`)
+
+- **`/goal:X` slash-command syntax was wrong everywhere; should be `/goal-X`.** Real failure case from the wild: agent (running per `prompts/budget-limit.md`, `prompts/final-summary.md`, etc.) suggested user run `/goal:start --max-iter 200 --token-budget 2500000`. Both Claude Desktop and Claude Code CLI rejected this with "Unknown command: /goal-start. Did you mean /goal-start?" — the colon syntax does not exist as a user-facing slash command in either environment; commands are accessed by the `.md` filename (`commands/goal-X.md` → `/goal-X`). Fix: bulk replace `/goal:X` → `/goal-X` across all user-facing content (`prompts/`, `commands/`, `README.md`, `docs/`). 155 references migrated. CHANGELOG kept verbatim for historical accuracy. (`prompts/*.md`, `commands/*.md`, `README.md`, `docs/*.md`, snapshot test files updated)
+
+### Notes
+
+The two bugs were independent but both surfaced in the same Desktop test run. v1.1.5-1.1.8 only tested the Claude Code CLI install path; the Desktop install.sh path was untested end-to-end. The user explicitly requested smoke testing in v1.1.8, then ran one against Desktop and exposed both bugs at once. The lesson: every release should smoke both Path A (CLI plugin install) and Path B (install.sh + Claude Desktop) before shipping.
+
+[1.1.9]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.9
+
 ## [1.1.8] — 2026-05-10
 
 ### Added

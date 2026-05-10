@@ -50,7 +50,7 @@ cat > .claude/goals/active/tree.json <<'EOF'
 EOF
 ```
 
-The `approved_at` is set so `/goal:start` accepts the tree without going through `/goal:plan` (Phase 6).
+The `approved_at` is set so `/goal-start` accepts the tree without going through `/goal-plan` (Phase 6).
 
 ### 2. Open Claude Code in the scratch project
 
@@ -61,20 +61,20 @@ claude
 
 Claude Code should detect the plugin and load `commands/goal-*.md`. Verify with `/help` — the goal commands should be listed.
 
-### 3. `/goal:status` BEFORE start
+### 3. `/goal-status` BEFORE start
 
 Run inside the Claude Code session:
 
 ```
-/goal:status
+/goal-status
 ```
 
-**Expected:** `No active goal. Run /goal:plan to start.` (because no `state.json` exists yet).
+**Expected:** `No active goal. Run /goal-plan to start.` (because no `state.json` exists yet).
 
-### 4. `/goal:start --max-iter 5 --token-budget 100000 --time-budget 5m`
+### 4. `/goal-start --max-iter 5 --token-budget 100000 --time-budget 5m`
 
 ```
-/goal:start --max-iter 5 --token-budget 100000 --time-budget 5m
+/goal-start --max-iter 5 --token-budget 100000 --time-budget 5m
 ```
 
 **Expected stdout:**
@@ -100,10 +100,10 @@ Claude should:
 3. Stop. The Stop hook fires → engine processes the tags → renders `prompts/final-summary.md` → continuation prompt injected.
 4. Claude sees the final-summary continuation and writes its closing turn.
 
-### 6. `/goal:status` AFTER completion
+### 6. `/goal-status` AFTER completion
 
 ```
-/goal:status
+/goal-status
 ```
 
 **Expected:**
@@ -122,10 +122,10 @@ cat /tmp/goal-smoke/.claude/goals/active/notes.md  # iteration digest entries
 
 The `notes.md` should have one line per iteration ending in `lifecycle=achieved` for the final entry.
 
-### 8. `/goal:clear --archive`
+### 8. `/goal-clear --archive`
 
 ```
-/goal:clear --archive
+/goal-clear --archive
 ```
 
 **Expected:**
@@ -136,9 +136,9 @@ The `notes.md` should have one line per iteration ending in `lifecycle=achieved`
 
 Verify the archive contains `tree.json` + `state.json` and `.claude/goals/active/` is gone.
 
-### 9. (Optional) Review-gate flow with `/goal:approve`
+### 9. (Optional) Review-gate flow with `/goal-approve`
 
-For tasks with non-empty `review[]`, the Stop hook puts the cursor into `review-pending` after the agent emits `<task-status>achieved</task-status>` + `<review-request agents="..." />`. From there, the agent is expected to invoke the named reviewer agents via the `Agent` tool, collect `<audit-verdict>` tags, and re-submit. If a required reviewer is unavailable in the user's environment, the user can manually override via `/goal:approve`.
+For tasks with non-empty `review[]`, the Stop hook puts the cursor into `review-pending` after the agent emits `<task-status>achieved</task-status>` + `<review-request agents="..." />`. From there, the agent is expected to invoke the named reviewer agents via the `Agent` tool, collect `<audit-verdict>` tags, and re-submit. If a required reviewer is unavailable in the user's environment, the user can manually override via `/goal-approve`.
 
 #### Recipe variant: review-required task
 
@@ -175,11 +175,11 @@ cat > .claude/goals/active/tree.json <<'EOF'
 EOF
 ```
 
-Replace `aaa-art-director` with any reviewer subagent installed in your environment (check `~/.claude/agents/` and `~/.claude/skills/`). For testing without an installed reviewer, leave any name and use the manual `/goal:approve` path below.
+Replace `aaa-art-director` with any reviewer subagent installed in your environment (check `~/.claude/agents/` and `~/.claude/skills/`). For testing without an installed reviewer, leave any name and use the manual `/goal-approve` path below.
 
-#### `/goal:start` and observe review flow
+#### `/goal-start` and observe review flow
 
-Run `/goal:start --max-iter 10 --token-budget 200000 --time-budget 10m`, then prompt Claude to do the work. Claude should:
+Run `/goal-start --max-iter 10 --token-budget 200000 --time-budget 10m`, then prompt Claude to do the work. Claude should:
 
 1. Create `foo.txt` and emit `<evidence file="foo.txt" criterion="0" note="..." />` + `<task-status>achieved</task-status>` + `<review-request agents="aaa-art-director" />`.
 2. Stop hook fires → applyMutations transitions the cursor to `review-pending` → continuation prompt asks Claude to invoke the reviewer.
@@ -197,12 +197,12 @@ cat /tmp/goal-review-smoke/.claude/goals/active/audits/*.json
 # Expected JSON body: {ts, node_id, kind: "audit-verdict", agent, status, text}
 ```
 
-#### Manual override: `/goal:approve --reason "..."`
+#### Manual override: `/goal-approve --reason "..."`
 
-If the reviewer subagent is not installed in your environment (or the agent emits a NOGO that you disagree with after manual inspection), use `/goal:approve`:
+If the reviewer subagent is not installed in your environment (or the agent emits a NOGO that you disagree with after manual inspection), use `/goal-approve`:
 
 ```
-/goal:approve --reason "reviewer agent not installed in this environment"
+/goal-approve --reason "reviewer agent not installed in this environment"
 ```
 
 **Expected:**
@@ -211,15 +211,15 @@ If the reviewer subagent is not installed in your environment (or the agent emit
 - `state.cursor` advanced (or `state.lifecycle = "achieved"` if last task).
 - `tree.root.children[0].status = "achieved"` (or whichever node was the cursor).
 
-#### `/goal:approve` failure modes
+#### `/goal-approve` failure modes
 
-`/goal:approve` refuses (exit 1) if:
+`/goal-approve` refuses (exit 1) if:
 - No active goal (`state.json` missing).
 - `state.lifecycle != "pursuing"` (paused/achieved/unmet/budget-limited).
 - Cursor node is not in `review-pending` status (e.g., still `pursuing` or already `achieved`).
 - `state.cursor` doesn't match any node in the tree.
 
-To test the review-pending refusal, run `/goal:approve` BEFORE the agent has emitted `<review-request agents="..." />` — expect `❌ cursor not review-pending (is pursuing)`.
+To test the review-pending refusal, run `/goal-approve` BEFORE the agent has emitted `<review-request agents="..." />` — expect `❌ cursor not review-pending (is pursuing)`.
 
 ### 10. (Optional) Pause / resume / abandon paths
 
@@ -227,25 +227,25 @@ Re-run steps 1-4 to set up a fresh goal, then:
 
 **Pause:**
 ```
-/goal:pause
+/goal-pause
 ```
 Expected: `⏸ goal paused`. State `lifecycle: "paused"`, `paused_at` is set. Subsequent agent turns should NOT trigger continuation prompts (Stop hook silently exits).
 
 **Resume:**
 ```
-/goal:resume
+/goal-resume
 ```
 Expected: `▶ goal resumed`. Lifecycle back to `pursuing`. Stop hook fires again on next turn.
 
-Resume refuses if any budget is exhausted — to test, manually edit `state.json` to set `iterations.used = iterations.max` then run `/goal:resume`. Expected: `❌ budget exhausted; cannot resume`.
+Resume refuses if any budget is exhausted — to test, manually edit `state.json` to set `iterations.used = iterations.max` then run `/goal-resume`. Expected: `❌ budget exhausted; cannot resume`.
 
 **Abandon:**
 ```
-/goal:abandon --reason "switching strategies"
+/goal-abandon --reason "switching strategies"
 ```
 Expected: `⛔ goal abandoned: switching strategies`. Lifecycle becomes `unmet`. Stop hook silently exits (lifecycle gate).
 
-`/goal:abandon` refuses on `achieved` or `unmet` lifecycles — to test, run twice in a row. Second call: `❌ cannot abandon from lifecycle=unmet`.
+`/goal-abandon` refuses on `achieved` or `unmet` lifecycles — to test, run twice in a row. Second call: `❌ cannot abandon from lifecycle=unmet`.
 
 ## Failure-mode checklist
 
@@ -253,11 +253,11 @@ If any of the following happen, STOP and investigate:
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|
-| `/goal:start` says `CLAUDE_CODE_SESSION_ID env var not set` | Plugin is invoked from a non-Claude-Code shell, OR Claude Code is not exporting the env var | `engine/start-goal-cli.mjs:28` (the I-3 fix-up gate); check `env \| grep CLAUDE_CODE` inside the slash-command shell context |
+| `/goal-start` says `CLAUDE_CODE_SESSION_ID env var not set` | Plugin is invoked from a non-Claude-Code shell, OR Claude Code is not exporting the env var | `engine/start-goal-cli.mjs:28` (the I-3 fix-up gate); check `env \| grep CLAUDE_CODE` inside the slash-command shell context |
 | Stop hook never fires (Claude completes a turn but no continuation appears) | session_id mismatch between `state.session_id` and the hook's stdin payload | `engine/stop-hook.mjs:106` (the session-id gate); compare `state.json.session_id` to `~/.claude/logs/*` hook payload logs |
 | Stop hook fires but stdout is silent | Lifecycle is not `pursuing` (paused/achieved/unmet/budget-limited), OR an internal error was caught and logged to stderr | `~/.claude/logs/` for `[goal-mode]` lines from the I-3 stderr observability fix-up |
-| Slash command not discovered (`/goal:status` errors as "unknown command") | Plugin not loaded, OR `commands/*.md` frontmatter malformed | `claude /plugins` to see loaded plugins; `cat commands/goal-status.md` to inspect frontmatter |
-| `/goal:start` succeeds but next iteration's evidence tags do nothing | parseTags is stripping the agent's tags as code-fenced (the I-1 stripCodeRegions fix-up) | Verify the agent emits tags OUTSIDE backticks/fences in their response prose |
+| Slash command not discovered (`/goal-status` errors as "unknown command") | Plugin not loaded, OR `commands/*.md` frontmatter malformed | `claude /plugins` to see loaded plugins; `cat commands/goal-status.md` to inspect frontmatter |
+| `/goal-start` succeeds but next iteration's evidence tags do nothing | parseTags is stripping the agent's tags as code-fenced (the I-1 stripCodeRegions fix-up) | Verify the agent emits tags OUTSIDE backticks/fences in their response prose |
 | Permission prompt appears for `Bash(${CLAUDE_PLUGIN_ROOT}/scripts/<x>.sh:*)` | First-time plugin use; Claude Code wants explicit user approval | Approve once; subsequent runs should not prompt unless permission scope changes |
 
 ## Versioning this recipe

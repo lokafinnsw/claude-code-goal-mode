@@ -16,4 +16,4 @@ This is your **final turn** for this goal. Do not attempt to continue work.
 2. **Do not** emit `<task-status>achieved</task-status>` for any task that is not actually finished. The engine will mark this run `budget-limited` regardless of what you claim.
 3. Output the summary text to chat as well, so the user sees it.
 
-After this turn, the engine will not invoke you again for this goal until `/goal:resume` (which requires fresh budget) or `/goal:clear`.
+After this turn, the engine will not invoke you again for this goal until `/goal-resume` (which requires fresh budget) or `/goal-clear`.
