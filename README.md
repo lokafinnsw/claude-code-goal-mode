@@ -96,7 +96,8 @@ The engine sees opaque strings and dispatches them. Adding goal-mode to a Rust, 
 
 | Command | Purpose |
 |---|---|
-| `/goal:plan <mission>` | Survey the project, build a Sprint → Epic → Task plan-tree with stack-appropriate `validate` commands and project-specific review agents. Lifecycle → `draft`. |
+| `/goal:plan <mission>` | Survey the project, build a Sprint → Epic → Task plan-tree from scratch (LLM bootstrap) with stack-appropriate `validate` commands and project-specific review agents. Lifecycle → `draft`. |
+| `/goal:plan-from-file <path>` | Convert an existing Markdown plan file into the goal-mode schema. Use when you already have a plan in Markdown (any layout). LLM parses your file, normalizes to Sprint → Epic → Task, extracts acceptance criteria + validate commands, writes `tree.json` + normalized `plan.md` + draft `state.json`. Lifecycle → `draft`. |
 | `/goal:approve-plan` | Validate the plan (schema, criteria coverage, placeholder scan). Lifecycle → `approved`. |
 | `/goal:start [--max-iter N] [--token-budget N] [--time-budget Nm\|Nh]` | Begin pursuing. Stop hook becomes active. |
 | `/goal:status` (or just `/goal`) | Render the plan-tree with status icons, cursor highlight, triple-budget bars, last events. |
@@ -137,7 +138,7 @@ In the meantime, the repo can be cloned and used as a local plugin source for te
 - ✅ Pure renderer + 8 prompt templates (`engine/continuation.mjs`, `prompts/`)
 - ✅ Tag parser + mutation engine (`engine/parse-tags.mjs`, `engine/apply-mutations.mjs`)
 - ✅ Stop-hook orchestrator wiring all of the above (`engine/stop-hook.mjs`)
-- ✅ All 10 slash commands shipped (`commands/`, `engine/*-cli.mjs`)
+- ✅ 11 slash commands shipped (`commands/`, `engine/*-cli.mjs`)
 - ✅ Plan bootstrap + approve flow (`prompts/plan-bootstrap.md`, `engine/validate-plan.mjs`)
 - ✅ Audit-gate + manual override (`engine/manual-approve.mjs`, audit JSON persistence)
 - ✅ Triple budget enforced (`engine/budget.mjs`, `tallyTokens` from JSONL)

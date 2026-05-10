@@ -4,6 +4,25 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-05-10
+
+### Added
+
+- **`/goal:plan-from-file <path>`** — new slash command for users who already have a Markdown plan written. The LLM reads the user's source file (any layout — H2/H3/H4 hierarchy, flat bullet lists, mixed conventions), maps it to the Sprint → Epic → Task schema, extracts acceptance criteria and validate commands from the source where present (synthesizes from task title/goal where absent — every task must have ≥1 criterion to satisfy the engine's schema), and writes `tree.json` + normalized `plan.md` + draft `state.json` into `.claude/goals/active/`. Composes cleanly with `/goal:approve-plan` → `/goal:start` (no engine changes — the existing `validatePlan` validates the converted tree, and the existing lifecycle gates accept it). (`commands/goal-plan-from-file.md`, `prompts/plan-from-file.md`)
+
+### Changed
+
+- **README + `/goal:help`**: 11 slash commands instead of 10 (added `/goal:plan-from-file`); refreshed Commands table with the new entry.
+- **`docs/PLAN-FORMAT.md` + Commands table**: `/goal:plan <mission>` is now described as "build from scratch (LLM bootstrap)" to distinguish from `/goal:plan-from-file <path>` ("convert from existing Markdown").
+
+### Notes
+
+This is the natural complement to `/goal:plan`: `/goal:plan` asks the LLM to design the plan; `/goal:plan-from-file` asks the LLM to translate the user's pre-written plan into the engine's schema. The `validatePlan` business-rule layer (Phase 6) catches placeholder strings (`TBD`, `TODO`, etc.) the user's source may have left in — fix them between `/goal:plan-from-file` and `/goal:approve-plan`.
+
+Test count post-1.1.0: 282 → 283 committed across 24 files (+1 snapshot test for `prompts/plan-from-file.md`).
+
+[1.1.0]: https://github.com/lokafinnsw/claude-code-goal-mode/releases/tag/v1.1.0
+
 ## [1.0.1] — 2026-05-10
 
 ### Fixed
