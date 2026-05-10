@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/lokafinnsw/claude-code-goal-mode/actions/workflows/ci.yml"><img src="https://github.com/lokafinnsw/claude-code-goal-mode/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
-  <a href="#status"><img src="https://img.shields.io/badge/status-under%20construction-orange.svg" alt="Status"></a>
+  <a href="#status"><img src="https://img.shields.io/badge/status-1.0.0-brightgreen.svg" alt="Status"></a>
 </p>
 
 ---
@@ -106,6 +106,17 @@ The engine sees opaque strings and dispatches them. Adding goal-mode to a Rust, 
 | `/goal:clear [--archive]` | Remove the active goal (with optional snapshot to `.claude/goals/archive/<date>-<slug>/`). |
 | `/goal:help` | Show all commands and the mental model. |
 
+## Documentation
+
+| Doc | Topic |
+|---|---|
+| [docs/PLAN-FORMAT.md](docs/PLAN-FORMAT.md) | `tree.json` schema field-by-field + `plan.md` Markdown convention + round-trip rules. |
+| [docs/REVIEW-AGENTS.md](docs/REVIEW-AGENTS.md) | How to declare project-specific reviewers + multi-stack examples (Phaser/JS, Rust, Python ML). |
+| [docs/BUDGET.md](docs/BUDGET.md) | Triple-budget mechanics, token tally semantics, recommended ranges per goal size, graceful exit. |
+| [docs/ANTI-PATTERNS.md](docs/ANTI-PATTERNS.md) | Catalog of 10 failure modes (proxy-signal collapse, false promises, NOGO oscillation, etc.) + how Goal Mode defends against each. |
+| [docs/SMOKE-TEST.md](docs/SMOKE-TEST.md) | Manual UX verification recipe for the full lifecycle inside a real Claude Code session. |
+| [docs/EXAMPLES/](docs/EXAMPLES/) | Three sample plans: Python migration (pydantic v1→v2), Node feature (JWT auth), JS refactor (axios→fetch). Each plan.md + tree.json pair validates against the engine's schema + business rules. |
+
 ## Installation
 
 Once published to a marketplace:
@@ -120,9 +131,17 @@ In the meantime, the repo can be cloned and used as a local plugin source for te
 
 ## Status
 
-**Currently in early development.** Foundation is in: zod schemas for the plan-tree and runtime state, atomic on-disk persistence with corrupt-file recovery, pre-order DFS leaf walker, cursor advancement.
+**v1.0.0 — stable.** All foundational phases shipped:
 
-Next up: the continuation-prompt renderer and templates, the structured-tag parser, and the Stop-hook orchestrator that wires everything together. Plan bootstrap, audit gate, and triple-budget tracking follow.
+- ✅ Zod schemas + atomic persistence (`engine/state.mjs`)
+- ✅ Pure renderer + 7 prompt templates (`engine/continuation.mjs`, `prompts/`)
+- ✅ Tag parser + mutation engine (`engine/parse-tags.mjs`, `engine/apply-mutations.mjs`)
+- ✅ Stop-hook orchestrator wiring all of the above (`engine/stop-hook.mjs`)
+- ✅ All 10 slash commands shipped (`commands/`, `engine/*-cli.mjs`)
+- ✅ Plan bootstrap + approve flow (`prompts/plan-bootstrap.md`, `engine/validate-plan.mjs`)
+- ✅ Audit-gate + manual override (`engine/manual-approve.mjs`, audit JSON persistence)
+- ✅ Triple budget enforced (`engine/budget.mjs`, `tallyTokens` from JSONL)
+- ✅ 4 reference docs + 3 sample plans + smoke recipe
 
 `main` is the integration branch and is kept green per commit. See the [Actions tab](https://github.com/lokafinnsw/claude-code-goal-mode/actions) for the latest CI run.
 
