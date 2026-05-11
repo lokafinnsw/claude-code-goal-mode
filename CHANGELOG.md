@@ -4,6 +4,63 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] — 2026-05-11
+
+**Agent-facing skills + README overhaul.** UX is product surface — this release ships the documentation+behavior contract that teaches controller agents how to interact with the engine without breaking it.
+
+### Added
+
+- **`skills/using-goal-mode/SKILL.md`** (21 KB) — comprehensive guide for controller agents. Covers:
+  - Mental model (Sprint → Epic → Task, cursor advancement, evidence-mapped acceptance criteria)
+  - All 8 lifecycle states with what each means and what the agent should do
+  - Tag emission discipline (the 5 tag kinds, the two-layer `<details>` convention)
+  - Reviewer-independence enforcement (v2.0.0+) — why fabricated verdicts are rejected
+  - Escape-hatch protocol (v2.0.1 + v2.0.4) — exact verdict format, what happens in `awaiting-manual-approval`, when to STOP emitting
+  - Skill-vs-Agent gotcha — when a "reviewer" is a Skill (markdown at `~/.claude/skills/<name>/`) but lacks the paired Agent file (`~/.claude/agents/<name>.md`), `Agent(subagent_type=...)` fails; explanation of how to register the matching Agent file vs. use the escape hatch
+  - Multi-session / cross-project isolation (v2.0.2 + v2.0.3) — why `stdin.cwd` is canonical, what shell `cd` does NOT change
+  - Recovery paths summary table
+  - 9 anti-patterns (categorically forbidden, with the failure modes each guards against)
+  - Plugin maintenance — which symptoms map to which version's fix; upgrade procedure
+  - Quick reference: state-file paths + most-useful commands
+  - `<SUBAGENT-STOP>` clause so reviewer subagents skip the skill (they emit `<audit-verdict>` only per `commands/goal-review.md`)
+- **`skills/goal-mode-tag-discipline/SKILL.md`** (11 KB) — precise reference for `engine/parse-tags.mjs` semantics. Covers:
+  - Pre-parse `stripCodeRegions` exact regexes (what gets stripped before parsing)
+  - Full regex for each tag (`<evidence>`, `<task-status>`, `<blocker>`, `<review-request>`, `<audit-verdict>`)
+  - Attribute parsing nuances (quoting, duplicate attrs, numeric attrs, HTML escapes, nested tags)
+  - Escape-hatch detection regex (`/^\s*unavailable\b/i`) with positive and negative examples
+  - Tag visit order within one turn's parse output
+  - 6 common emission mistakes with cause/effect
+  - When to use this skill vs `using-goal-mode`
+
+### Changed
+
+- **README.md** — major refresh:
+  - Lifecycle table updated to 8 states (was 7); `awaiting-manual-approval` documented
+  - New "Skills for agents" section pointing at both skill definitions
+  - Tags reference table modernized (replaced loose prose with structured table; `criterion` correctly noted as integer; case-insensitivity flagged; reviewer-independence requirement explained)
+  - Escape-hatch verdict format documented in body (was only in CHANGELOG)
+  - Structural defenses (proxy-signal collapse + fabricated verdicts + code-fence stripping) called out together
+  - Status section consolidated: single "What's new in the 2.0.x line" summary instead of stacked version notes; version log table at the bottom; current architecture diagram of `.claude/goals/active/`
+
+### Test suite
+
+- 907 pass / 2 skip / 0 fail — unchanged from v2.0.4 (no engine code changes in this release; new files are skill markdown + README edits).
+
+### Migration
+
+- No state/schema migration. After pulling v2.0.5:
+  1. `bash install.sh` to update the plugin pin
+  2. Restart Claude Desktop (so the plugin loader picks up the new `skills/` directory)
+  3. Skills auto-register; `using-goal-mode` and `goal-mode-tag-discipline` appear in the agent's available skill list
+
+### Why this matters
+
+Pre-v2.0.5, the only agent-facing documentation was `commands/goal-help.md` (slash command body, terse) plus the continuation-prompt templates themselves. Agents learned the rules by trial and error across many goals — and frequently mis-emitted tags, fabricated verdicts, or fell into the escape-hatch loop because the recovery semantics weren't documented anywhere they would read.
+
+The skills system in Claude Code is the canonical place for "rules an agent must know" — auto-discovered, declared with `description` so the agent knows when to invoke. Putting goal-mode's behavior contract there means every Claude session interacting with an active goal will load the rules before acting, instead of guessing.
+
+UX is product surface. A SOTA engine that emits silently-dropped tags or surprises users with environmental-cause unmets isn't SOTA — it's correct code with a broken contract. v2.0.5 closes the contract gap.
+
 ## [2.0.4] — 2026-05-11
 
 **Escape-hatch lifecycle gate.** Kills the "Не лезу loop" user-reported on 2026-05-11.

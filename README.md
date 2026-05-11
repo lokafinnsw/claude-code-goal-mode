@@ -39,7 +39,7 @@ Anthropic ships [Ralph Loop](https://github.com/anthropics/claude-plugins-offici
 | Acceptance criteria per task | ❌ | ✅ (zod-validated, evidence-mapped) |
 | Review gates | ❌ | ✅ (declarative, project-specific) |
 | Budget control | iterations only | iterations + tokens + wall-clock |
-| Lifecycle states | active / cancelled | seven-state lifecycle with terminal `achieved`, `unmet`, `budget-limited` |
+| Lifecycle states | active / cancelled | eight-state lifecycle (draft → approved → pursuing → paused / awaiting-manual-approval / achieved / unmet / budget-limited) |
 | Continuation prompt | static every iteration | re-rendered from disk state every iteration |
 | Anti "proxy-signal collapse" | ❌ | ✅ (engine refuses `achieved` until every criterion has evidence) |
 | Survives `/clear` and compactions | partial | full (state on disk, re-read every turn) |
@@ -106,6 +106,32 @@ The engine sees opaque strings and dispatches them. Adding goal-mode to a Rust, 
 | `/goal-abandon --reason "..."` | Lifecycle → `unmet` with a recorded reason. |
 | `/goal-clear [--archive]` | Remove the active goal (with optional snapshot to `.claude/goals/archive/<date>-<slug>/`). |
 | `/goal-help` | Show all commands and the mental model. |
+
+## Lifecycle states
+
+| State | Meaning | Entry trigger | Exit |
+|---|---|---|---|
+| `draft` | Plan exists but not validated | `/goal-plan` or `/goal-plan-from-file` | `/goal-approve-plan` |
+| `approved` | Plan locked, no budgets yet | `/goal-approve-plan` | `/goal-start` |
+| `pursuing` | Active work — Stop hook drives turns | `/goal-start` (or `/goal-resume`) | `/goal-pause`, achievement, block escalation, budget exhaustion, escape-hatch |
+| `paused` | User explicitly halted; Stop hook returns null | `/goal-pause` | `/goal-resume` |
+| `awaiting-manual-approval` | **v2.0.4** — escape-hatch from unavailable reviewer; Stop hook fully suppressed | Reviewer subagent unavailable + `<audit-verdict status="REVISE">unavailable; ...</audit-verdict>` emitted | `/goal-approve <task-id>` (→ pursuing) or `/goal-abandon` (→ unmet) |
+| `achieved` | Every leaf task achieved; terminal | Cursor advances past last task with all-GO | `/goal-clear` to start fresh |
+| `unmet` | 3 consecutive blocks/NOGOs OR `/goal-abandon`; terminal | 3-strike or manual abandon | `/goal-clear` to start fresh |
+| `budget-limited` | Iter/tokens/wallclock cap hit; terminal | Any axis exhausted | `/goal-resume` with fresh budget OR `/goal-clear` |
+
+## Skills for agents
+
+The plugin ships two skill definitions that teach controller agents how to interact with the engine correctly. Claude Code's skill loader auto-discovers them; agents invoke them via the `Skill` tool.
+
+| Skill | Use when |
+|---|---|
+| `using-goal-mode` | Active goal driving the conversation (any pursuing / paused / awaiting / blocked state); before running `/goal-plan`, `/goal-start`, `/goal-approve`, `/goal-resume`, `/goal-abandon`, `/goal-clear`. Covers tag emission discipline, escape-hatch protocol, lifecycle states, anti-patterns, multi-session isolation, recovery paths. |
+| `goal-mode-tag-discipline` | Before emitting a complex verdict or evidence block. Exact regex/format details for `parse-tags.mjs`, code-fence stripping, escape-hatch regex (`/^\s*unavailable\b/i`), attribute quoting rules, what the parser silently drops. |
+
+Both skills include the `<SUBAGENT-STOP>` clause — reviewer subagents skip them automatically (their job is to emit `<audit-verdict>` only, per `commands/goal-review.md`).
+
+For the user-facing slash-command reference, see `/goal-mode:goal-help` (or `commands/goal-help.md`).
 
 ## Documentation
 
@@ -321,27 +347,72 @@ The engine writes to `.claude/goals/active/`:
 
 Compaction and `/clear` are non-events; the engine re-reads from disk every turn.
 
-### Tags the agent emits (reference, not required reading)
+### Tags the agent emits (reference)
 
-You do not need to know these to use goal-mode. The continuation prompt steers the agent to emit them. For reference:
+You do not need to know these to use goal-mode — the continuation prompt steers the agent to emit them. For reference (exact semantics in the `goal-mode-tag-discipline` skill):
 
-- `<evidence file="src/auth/jwt.ts" criterion="acceptance.tests-pass">All 14 tests green</evidence>`: maps work to one acceptance criterion.
-- `<task-status>achieved</task-status>`: the agent claims the task is done.
-- `<review-request agents="aaa-art-director, rpg-game-designer"/>`: the agent requests audit.
-- `<audit-verdict status="GO|NOGO|REVISE" reason="..."/>`: a reviewer's verdict.
-- `<blocker reason="..."/>`: escalates the current task to `blocked`.
+| Tag | Purpose | Notes |
+|---|---|---|
+| `<evidence file="path/to/file" line="N" criterion="i" note="..."/>` | Map work to acceptance criterion `i` (0-indexed integer) | Can be self-closed or paired (`<evidence ...>body</evidence>`). `criterion` MUST be integer in `[0, criteria.length)`. |
+| `<task-status>achieved\|pursuing\|blocked</task-status>` | Agent's declaration of current cursor task status | Case-insensitive since v2.0.3 |
+| `<review-request agents="reviewer-1,reviewer-2"/>` | Transition `pursuing → review-pending` when all criteria covered | Self-closed only; comma-separated agent list |
+| `<audit-verdict agent="reviewer-x" status="GO\|NOGO\|REVISE">verdict body</audit-verdict>` | Relay a reviewer subagent's verdict | Status case-normalized to UPPERCASE. Requires matching `Agent(subagent_type=reviewer-x)` dispatch in same turn's transcript (v2.0.0 reviewer-independence check); otherwise rejected as fabricated. |
+| `<blocker>reason text</blocker>` | Reason paired with `<task-status>blocked</task-status>` | Empty/whitespace-only body silently dropped |
 
-The engine refuses to advance the cursor unless every acceptance criterion has at least one mapped `<evidence>` tag, even if `<task-status>achieved</task-status>` is present. This is the structural defense against proxy-signal collapse (the failure mode where the agent declares success because tests pass, even though the real user objective was not met).
+**Escape-hatch verdict (v2.0.1 + v2.0.4):** when a reviewer's `subagent_type` is not registered in the Claude environment (no matching `~/.claude/agents/<name>.md`), emit:
+
+```
+<audit-verdict agent="reviewer-x" status="REVISE">unavailable; user must run /goal-approve</audit-verdict>
+```
+
+Exact format: `status="REVISE"` AND verdict body starts with `unavailable` (case-insensitive, optional leading whitespace; regex `/^\s*unavailable\b/i`). The engine recognizes this, marks the cursor `blocked`, AND transitions `lifecycle` to `awaiting-manual-approval` — Stop hook then renders the recovery prompt ONCE and suppresses all subsequent ticks until `/goal-approve <task-id>` or `/goal-abandon`. No 3-strike unmet from environmental cause.
+
+**Structural defenses (engine refuses to advance):**
+- No `<task-status>achieved</task-status>` is honored without `<evidence criterion="i"/>` for every criterion. Prevents proxy-signal collapse (claiming tests-pass when the user objective wasn't met).
+- No `<audit-verdict>` is accepted without matching `Agent(subagent_type=...)` dispatch in the same turn. Prevents fabricated reviewer verdicts.
+- Real engine tags inside ``` fenced ``` code blocks or `inline backticks` are stripped before parsing. Example tags in prose-rendered prompts are intentionally ignored — real tags must be in prose or inside `<details>` blocks.
 
 ## Status
 
-**v2.0.4 — stable (escape-hatch lifecycle gate).** Kills the "Не лезу loop" bug: when reviewer subagent_type is unavailable in env, escape-hatch verdict now transitions to new `awaiting-manual-approval` lifecycle. Stop hook fires recovery prompt ONCE then suppresses subsequent ticks (no more 3-strike unmet from environmental cause). `/goal-approve` restores `pursuing` + advances cursor. New SessionStart surfacing + doctor check. **907 pass / 0 fail / 52 files**. See CHANGELOG [2.0.4].
+**v2.0.4 — stable.** All foundational + v2-track work shipped. **907 tests pass / 2 skip / 0 fail across 52 files. Doctor 13 ok / 0 warn / 0 fail on a healthy goal.**
 
-**v2.0.3 — stable (full SOTA hardening pass).** Apex2-methodology release closing every Critical / Important / Minor finding from the 2026-05-11 engineering audit of v2.0.2. Zero tech debt. 5 Critical bugs (SessionStart context dropouts, project-pollution mkdir, O(full-file) transcript reads, rotation token undercounting, cache-writeback race), 10 Important, 8 Minor — all with regression tests. New shared `engine/hook-context.mjs` plus incremental transcript checkpoint engine. **888 tests pass / 0 fail / 51 files**. See CHANGELOG [2.0.3].
+### What's new in the 2.0.x line (summary)
 
-**v2.0.2 — stable (hotfix).** Cross-project leakage fix: hooks now prefer `stdin.cwd` (Claude Code's canonical per-event project dir) over `process.cwd()`. Eliminates the bug where mancelot/other goal's continuation prompt leaked into unrelated project sessions in Claude Desktop multi-tab setups. See CHANGELOG [2.0.2].
+The 2.0.x line landed event-sourcing as canonical truth, concurrent-session locking, a tight engineering audit closeout with regression tests for every finding, and escape-hatch hardening that closed UX dead-ends users hit in production.
 
-**v2.0.1 — stable (hotfix).** Breaks the infinite-loop bug when reviewer's `subagent_type` is unavailable in the env — the escape-hatch verdict now routes to a blocked state with three recovery options (`/goal-approve` / register agent / revise plan) instead of being rejected as fabricated. See CHANGELOG [2.0.1].
+**Event sourcing + locking (2.0.0):**
+- 15-kind event taxonomy with ULID-sorted append-only `events.jsonl`
+- Pure reducer (no `Date.now` / `Math.random` / `fs` / `process.env`) — lint-enforced
+- Snapshots + tail replay for O(tail) load instead of O(genesis)
+- Transactional turn batches (atomic event emission per Stop-hook fire)
+- File-based advisory lock per-goal with PID liveness + stale detection
+- v1→v2 migration with `.pre-v2-migration-*` backups
+- All 7 G1 acceptance gates closed (determinism, migration, cold/warm replay perf, crash injection, reducer purity, self-meta)
+
+**Cross-project isolation (2.0.2):**
+- Hooks prefer Claude Code's `stdin.cwd` over `process.cwd()` — multi-tab Claude Desktop setups no longer leak one project's continuation into another's session
+
+**SOTA hardening pass (2.0.3):**
+- New shared `engine/hook-context.mjs` — single source of truth for hook enrichment, used by both Stop and SessionStart (previously SessionStart rendered review/blocked templates with undefined fields)
+- Incremental transcript checkpoint (`engine/transcript-checkpoint.mjs`) — O(new-bytes) per Stop-hook tick instead of O(full-transcript); rotation-safe monotonic token floor; fail-closed on Agent dispatches without timestamp
+- `loadStateFromEvents` made read-only; explicit `recoverCacheFromEvents()` for crash-recovery under the lock
+- `HistoryEventSchema` liberalized (open enum) so new event kinds don't break `saveState`
+- History archive collision-safe filenames with `appendFileSync`
+- Doctor's `budget-headroom` lifecycle-aware (no FAIL noise on achieved goals)
+- Windows-safe `PLUGIN_ROOT` resolution via `fileURLToPath`
+- Anti-flap clock-drift guard
+- `<task-status>` parsing case-insensitive (`ACHIEVED` / `Achieved` / `achieved` all normalize)
+- 5 Critical + 10 Important + 8 Minor audit findings closed, each with regression test
+
+**Escape-hatch lifecycle gate (2.0.4):**
+- New `awaiting-manual-approval` lifecycle state — set automatically when a reviewer's `subagent_type` is unavailable in the environment
+- Stop hook renders the recovery prompt ONCE on the transition tick, then fully suppresses subsequent ticks (kills the spam loop where the controller agent kept emitting `<task-status>blocked</task-status>` toward a 3-strike `unmet`)
+- `/goal-approve <task-id>` accepts the new lifecycle as a valid entry: clears `blocker_reason`, advances cursor, restores `pursuing`
+- SessionStart hook surfaces the awaiting state on new session open (was previously silent)
+- Doctor's new `awaiting-manual-approval` check warns with the three recovery options
+- `/goal-resume` rejects with `/goal-approve` hint; `/goal-abandon` accepts; `/goal-pause` rejects (already idle)
+
+### Earlier release notes
 
 **v2.0.0 — stable.** Full v2-track ADR-0001 + ADR-0002 shipped. **All 7 G1 acceptance gates closed** (G1.1 determinism, G1.2 v1→v2 migration, G1.3 cold replay <500ms@10k events, G1.4 warm replay <100ms@10k, G1.5 crash injection 5 modes, G1.6 reducer purity lint, G1.7 self-meta against live goal). Cumulative: 15-kind event taxonomy, ULID-sorted log, pure reducer (no Date.now / Math.random / fs / process.env), snapshots, transactional turn batches, snapshot-aware loadStateFromEvents (forensic/recovery), v1→v2 migration, file-based advisory lock (ADR-0002, v1.3.0). Phase 8 reader-switch cutover deferred to v2.1.0 — requires apply-mutations refactor to fix dual-write doubling (filed as known limitation).
 
