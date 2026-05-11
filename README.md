@@ -335,6 +335,8 @@ The engine refuses to advance the cursor unless every acceptance criterion has a
 
 ## Status
 
+**v2.0.2 — stable (hotfix).** Cross-project leakage fix: hooks now prefer `stdin.cwd` (Claude Code's canonical per-event project dir) over `process.cwd()`. Eliminates the bug where mancelot/other goal's continuation prompt leaked into unrelated project sessions in Claude Desktop multi-tab setups. See CHANGELOG [2.0.2].
+
 **v2.0.1 — stable (hotfix).** Breaks the infinite-loop bug when reviewer's `subagent_type` is unavailable in the env — the escape-hatch verdict now routes to a blocked state with three recovery options (`/goal-approve` / register agent / revise plan) instead of being rejected as fabricated. See CHANGELOG [2.0.1].
 
 **v2.0.0 — stable.** Full v2-track ADR-0001 + ADR-0002 shipped. **All 7 G1 acceptance gates closed** (G1.1 determinism, G1.2 v1→v2 migration, G1.3 cold replay <500ms@10k events, G1.4 warm replay <100ms@10k, G1.5 crash injection 5 modes, G1.6 reducer purity lint, G1.7 self-meta against live goal). Cumulative: 15-kind event taxonomy, ULID-sorted log, pure reducer (no Date.now / Math.random / fs / process.env), snapshots, transactional turn batches, snapshot-aware loadStateFromEvents (forensic/recovery), v1→v2 migration, file-based advisory lock (ADR-0002, v1.3.0). Phase 8 reader-switch cutover deferred to v2.1.0 — requires apply-mutations refactor to fix dual-write doubling (filed as known limitation).

@@ -4,6 +4,32 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] — 2026-05-11
+
+**Hotfix — cross-project leakage.** When the user runs multiple Claude Desktop session tabs each opened to a different project, Claude Desktop in some configurations fans out hook calls for all tabs from a single host process carrying that host's initial `process.cwd()`. v2.0.1 and earlier resolved `projectRoot` via `process.cwd()`, so one project's `.claude/goals/active/` continuation prompts could leak into every other session tab — user reported "mancelot continuation appears in all my other projects" on 2026-05-11.
+
+### Fixed
+
+- **`engine/project-root.mjs`** (new) — `resolveProjectRoot(stdin, deps)` pure function that prefers Claude Code's `stdin.cwd` (the canonical per-event project dir included in the hook protocol payload) over `process.cwd()`. Strict validation chain: must be a non-empty absolute path pointing at a real directory; any failure falls back to `process.cwd()` (preserves v2.0.x behavior for environments where `stdin.cwd` is missing).
+- **`engine/stop-hook-cli.mjs`** — now calls `resolveProjectRoot(stdin, { fs, path, fallbackCwd: process.cwd() })` instead of trusting `process.cwd()` blindly. Inline doc-comment cross-references the leakage bug.
+- **`engine/session-start-cli.mjs`** — same fix applied symmetrically (SessionStart hook fires `auto-resume` continuation prompt; same leakage path).
+
+### Tests
+
+- **`tests/project-root-resolution.test.mjs`** — 17 new regression tests covering: happy path (stdin.cwd preferred when absolute + real dir), normalization (trailing slash, `..`, `//`), and 11 fallback edge cases (null/undefined/empty/non-string/non-object stdin; missing/null/empty/non-string/relative/non-existent/non-directory cwd). Plus a dedicated "cross-project leakage fix" subgroup verifying stdin.cwd wins over a completely different real fallbackCwd, and that invalid stdin.cwd falls back cleanly without silent leak.
+
+### Test suite
+
+- 836 pass / 2 skip / 0 fail across 46 files (was 819 in v2.0.1; +17 from this hotfix).
+
+### Migration
+
+- No state/schema migration needed. The fix is purely in the hook CLI entry points. Run `bash install.sh` after pulling v2.0.2 to deploy the new code; existing goal state is untouched.
+
+### Why this slipped past G1 gates
+
+The G1 acceptance suite tests engine purity, replay perf, migration correctness, and crash recovery — none of them exercise the **Claude Desktop multi-tab host-process fan-out scenario**, which only manifests in the actual Desktop runtime. The plugin assumed `process.cwd()` always equalled the calling session's project dir. v2.1.0 backlog now includes a G2 gate for "hook CLI projectRoot honors stdin.cwd protocol field" to lock in this regression.
+
 ## [2.0.1] — 2026-05-11
 
 **Hotfix.** Breaks an infinite-loop bug introduced in v2.0.0 when a reviewer's `subagent_type` is unavailable in the user's Claude environment.
