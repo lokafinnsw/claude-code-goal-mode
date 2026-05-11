@@ -508,6 +508,31 @@ export function checkAwaitingManualApproval(projectRoot) {
   );
 }
 
+/**
+ * v2.0.6: report when the goal was auto-paused due to silent-turn streak.
+ * Surfaces as warn with action — user can /goal-resume to continue.
+ */
+export function checkAutoPausedOnSilence(projectRoot) {
+  const id = 'auto-paused-on-silence';
+  const state = loadState(projectRoot);
+  if (!state) return ok(id, 'no goal active');
+  if (state.lifecycle !== 'paused') {
+    return ok(id, `lifecycle=${state.lifecycle}; not paused`);
+  }
+  const lastPause = [...(state.history ?? [])]
+    .reverse()
+    .find((h) => h.event === 'paused');
+  if (lastPause?.payload?.reason !== 'auto-paused-on-silence') {
+    return ok(id, 'paused by user, not auto-paused');
+  }
+  const silent = lastPause.payload?.silent_turns ?? '?';
+  return warn(
+    id,
+    `goal was AUTO-paused after ${silent} silent turns on cursor ${state.cursor}`,
+    `run /goal-mode:goal-resume to continue, /goal-mode:goal-abandon to terminate, or /goal-mode:goal-clear --archive to wipe`,
+  );
+}
+
 export const CHECKS = {
   'state-loadable': checkStateLoadable,
   'tree-loadable': checkTreeLoadable,
@@ -518,6 +543,7 @@ export const CHECKS = {
   'stop-hook-fired-recently': checkStopHookFiredRecently,
   'budget-headroom': checkBudgetHeadroom,
   'awaiting-manual-approval': checkAwaitingManualApproval,
+  'auto-paused-on-silence': checkAutoPausedOnSilence,
   'event-log-present': checkEventLogPresent,
   'pre-migration-backup-retention': checkPreMigrationBackupRetention,
   'v2-migrated': checkV2Migrated,

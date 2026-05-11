@@ -4,6 +4,56 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] — 2026-05-12
+
+**Auto-pause-on-silence — token-bleed safety net.**
+
+Closes the controller-not-engaging spam loop user-reported during a live mancelot session: when the controller agent has a user-level rule that tells it not to engage with the goal in the current session (e.g., memory rule "Не лезь в игру"), the agent emits minimum-text per turn with no goal-mode tags. Pre-v2.0.6 the Stop hook had no signal to stop firing the continuation prompt — it kept firing every turn, bleeding the token budget for zero progress. User burned ~40M tokens over 6+ Stop-hook ticks before noticing.
+
+### Added
+
+- **New state field `consecutive_silent_turns`** (zod default `0`, backward-compatible — old state.json files get the field backfilled on parse).
+- **`engine/stop-hook.mjs`** — after `applyMutations`, count engagement events from `turnHistory` (set of `evidence-added`, `review-requested`, `review-verdict`, `node-blocked`, `cursor-advanced`). If any engagement → reset counter to 0. Else → increment. When counter reaches `SILENCE_THRESHOLD = 5` AND lifecycle is still `pursuing`, auto-transition lifecycle to `paused`, record a `paused` history event with `payload.reason='auto-paused-on-silence'` + `payload.silent_turns` + `payload.recovery` hints, write a stderr diagnostic.
+- **`prompts/auto-paused-on-silence.md`** — one-shot recovery prompt rendered on the transition tick so the user sees a clear explanation of why the loop suddenly stopped.
+- **`engine/lifecycle-commands.mjs::resumeGoal`** — resets `consecutive_silent_turns` to 0 alongside the standard `paused → pursuing` transition. Without this, a goal that resumes after auto-pause and immediately has another silent turn would re-trigger pause on turn 1 instead of turn 5.
+- **`engine/session-start-hook.mjs`** — surfaces auto-paused state distinctly on new session open. User-initiated `/goal-pause` still falls through to the silent null-stdout passthrough (the user knows they paused it). Only auto-paused goals get the SessionStart hint.
+- **`engine/doctor.mjs::checkAutoPausedOnSilence`** — new check, reports `warn` with 3 recovery options when goal was auto-paused (resume / abandon / clear).
+
+### Tests
+
+- **`tests/auto-pause-on-silence.test.mjs`** — 11 regression tests:
+  - Silent-turn counter increments / engagement resets / threshold triggers auto-pause (3 tests)
+  - Stop-hook returns null stdout on subsequent ticks after auto-pause (1 test, no spam)
+  - `/goal-resume` resets counter and restores `pursuing` (1 test)
+  - SessionStart surfacing differs for auto-paused vs user-paused (2 tests)
+  - Doctor check for auto-paused vs user-paused vs pursuing (3 tests)
+  - Backward compat: pre-v2.0.6 state.json without the field gets default 0 (1 test)
+
+### Test suite
+
+- 918 pass / 2 skip / 0 fail across 53 files (was 907/2/0 in v2.0.5).
+
+### Behavior summary
+
+| Pre-v2.0.6 | v2.0.6 |
+|---|---|
+| Controller emits 0 goal-mode tags for N turns → Stop hook keeps firing | Counter increments. At N=5, lifecycle auto-pauses with recoverable reason |
+| User must manually notice + type `/goal-pause` to stop the bleed | Engine stops the bleed automatically after 5 turns |
+| Token budget drains silently | Single stderr diagnostic + one-shot prompt explaining the pause |
+| SessionStart never surfaces "your goal is in this odd state" | SessionStart hint when reopening session shows auto-pause + 3 recovery options |
+
+### Migration
+
+- No schema change beyond an optional defaulted field. After pulling v2.0.6:
+  1. `bash install.sh` to update the plugin pin
+  2. Restart Claude Desktop
+  3. Existing state.json files get `consecutive_silent_turns: 0` defaulted on next load (no migration step)
+- For goals already stuck in pre-v2.0.6 spam loops: after install + restart, the next Stop-hook tick starts counting from 0. 5 more silent turns → auto-pause. OR run `/goal-mode:goal-pause` immediately.
+
+### Skill notes
+
+- `skills/using-goal-mode/SKILL.md` — Lifecycle states table already includes `paused`; v2.0.7+ may add a row distinguishing auto-paused from user-paused. The current skill is correct for the v2.0.6 behavior (paused = Stop hook returns null, /goal-resume to continue).
+
 ## [2.0.5] — 2026-05-11
 
 **Agent-facing skills + README overhaul.** UX is product surface — this release ships the documentation+behavior contract that teaches controller agents how to interact with the engine without breaking it.

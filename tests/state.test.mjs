@@ -195,7 +195,9 @@ describe('atomic save/load', () => {
     };
     saveState(dir, state);
     const loaded = loadState(dir);
-    expect(loaded).toEqual(state);
+    // v2.0.6: zod default backfills consecutive_silent_turns on parse if
+    // missing. Expect the field with default 0.
+    expect(loaded).toEqual({ ...state, consecutive_silent_turns: 0 });
   });
 
   it('loadState returns null when file is missing', () => {

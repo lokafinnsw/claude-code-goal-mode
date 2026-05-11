@@ -156,6 +156,14 @@ export const GoalStateSchema = z.object({
   ended_at: z.string().datetime().nullable(),
   ended_reason: z.string().nullable(),
   history: z.array(HistoryEntrySchema),
+  // v2.0.6: auto-pause-on-silence — number of consecutive Stop-hook turns
+  // that produced ZERO engagement events (evidence-added, review-requested,
+  // review-verdict, node-blocked, cursor-advanced). When this hits
+  // SILENCE_THRESHOLD (5), the engine auto-transitions lifecycle to `paused`
+  // with a recoverable reason. Resets to 0 on any engagement turn or after
+  // /goal-resume. Optional + default for backward compatibility with v2.0.5
+  // state.json files that lack the field.
+  consecutive_silent_turns: z.number().int().nonnegative().default(0),
 });
 
 function atomicWrite(target, content) {

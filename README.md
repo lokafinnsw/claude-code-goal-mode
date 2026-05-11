@@ -374,7 +374,7 @@ Exact format: `status="REVISE"` AND verdict body starts with `unavailable` (case
 
 ## Status
 
-**v2.0.4 — stable.** All foundational + v2-track work shipped. **907 tests pass / 2 skip / 0 fail across 52 files. Doctor 13 ok / 0 warn / 0 fail on a healthy goal.**
+**v2.0.6 — stable.** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net.
 
 ### What's new in the 2.0.x line (summary)
 

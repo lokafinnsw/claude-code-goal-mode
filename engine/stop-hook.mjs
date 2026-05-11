@@ -365,6 +365,51 @@ export async function runStopHook({ stdin, projectRoot }) {
       process.stderr.write(`[goal-mode] event-log append failed (non-fatal): ${err.message}\n`);
     }
 
+    // v2.0.6: auto-pause-on-silence. Count engagement events from this turn;
+    // if none, increment the silent-turn counter. After SILENCE_THRESHOLD
+    // consecutive silent turns, auto-transition lifecycle to `paused` with
+    // a recoverable reason — kills the spam loop where the controller agent
+    // emits no goal-mode tags (e.g., when a user told it via memory rule
+    // to not engage with the goal in the current session). Without this,
+    // the Stop hook keeps firing the continuation prompt every turn and
+    // bleeds the token budget for no progress.
+    const ENGAGEMENT_EVENTS = new Set([
+      'evidence-added',
+      'review-requested',
+      'review-verdict',
+      'node-blocked',
+      'cursor-advanced',
+    ]);
+    const SILENCE_THRESHOLD = 5;
+    const turnHadEngagement = turnHistory.some((h) => ENGAGEMENT_EVENTS.has(h.event));
+    const currentSilent = newState.consecutive_silent_turns ?? 0;
+    if (turnHadEngagement) {
+      newState.consecutive_silent_turns = 0;
+    } else {
+      newState.consecutive_silent_turns = currentSilent + 1;
+    }
+    if (newState.consecutive_silent_turns >= SILENCE_THRESHOLD
+      && newState.lifecycle === 'pursuing') {
+      newState.lifecycle = 'paused';
+      newState.paused_at = ts;
+      newState.history.push({
+        ts,
+        iteration: newState.budget.iterations.used,
+        event: 'paused',
+        node_id: newState.cursor,
+        payload: {
+          reason: 'auto-paused-on-silence',
+          silent_turns: newState.consecutive_silent_turns,
+          recovery: '/goal-mode:goal-resume to continue, /goal-mode:goal-abandon to terminate',
+        },
+      });
+      process.stderr.write(
+        `[goal-mode] auto-paused after ${newState.consecutive_silent_turns} silent turns; `
+        + `controller agent emitted no goal-mode tags. Run /goal-mode:goal-resume to continue, `
+        + `or /goal-mode:goal-abandon if no longer needed.\n`,
+      );
+    }
+
     saveTree(projectRoot, newTree);
     saveState(projectRoot, newState);
     // Persist transcript checkpoint AFTER successful state save. Failure is
@@ -407,6 +452,38 @@ export async function runStopHook({ stdin, projectRoot }) {
       const ctx = buildUnmetContext(newTree, newState, ts);
       const reason = render(tpl, ctx);
       return { exit: 0, stdout: { decision: 'block', reason, systemMessage: '🔴 goal unmet' } };
+    }
+
+    // v2.0.6: auto-paused-on-silence transition handling.
+    //
+    // The engine just auto-paused the goal because the controller agent has
+    // emitted 5+ consecutive turns with zero goal-mode tags. Render ONE
+    // clear "auto-paused" notification so the user knows why the loop
+    // suddenly stopped, then on subsequent ticks the standard
+    // `lifecycle !== 'pursuing'` gate fires and Stop-hook returns null.
+    if (newState.lifecycle === 'paused') {
+      const lastPauseEvent = [...newState.history].reverse().find((h) => h.event === 'paused');
+      const isAutoPause = lastPauseEvent?.payload?.reason === 'auto-paused-on-silence';
+      if (isAutoPause && lastPauseEvent?.ts === ts) {
+        // This is the transition tick.
+        const cursorPaused = findNodeById(newTree, newState.cursor);
+        const ctx = buildContext(newTree, newState, newState.cursor);
+        if (ctx) {
+          ctx.silent_turns = lastPauseEvent.payload?.silent_turns ?? SILENCE_THRESHOLD;
+          ctx.task_id = cursorPaused?.id ?? newState.cursor;
+          ctx.task_title = cursorPaused?.title ?? '(unknown)';
+          const tpl = readPrompt('auto-paused-on-silence.md', PLUGIN_ROOT);
+          const reason = render(tpl, ctx);
+          return {
+            exit: 0,
+            stdout: {
+              decision: 'block',
+              reason,
+              systemMessage: `⏸ goal auto-paused after ${ctx.silent_turns} silent turns; /goal-mode:goal-resume to continue`,
+            },
+          };
+        }
+      }
     }
 
     // v2.0.4: awaiting-manual-approval transition handling.
