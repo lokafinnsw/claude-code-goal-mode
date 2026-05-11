@@ -25,6 +25,34 @@
  */
 
 import fs from 'node:fs';
+import { tallyTokensViaCheckpoint, saveCheckpoint } from './transcript-checkpoint.mjs';
+
+/**
+ * Incremental token tally with rotation-safe monotonic floor.
+ *
+ * Wraps `tallyTokensViaCheckpoint` from `transcript-checkpoint.mjs`. The
+ * checkpoint persists offset + rolling total + transcript fingerprint at
+ * `<projectRoot>/.claude/goals/active/.transcript-cache.json`, so each
+ * Stop-hook tick reads only the new bytes (bug C3 fix) and treats the
+ * prior cumulative count as a floor across rotations (bug C4 fix).
+ *
+ * Callers (the Stop hook) MUST hold the per-goal ADR-0002 lock around the
+ * call to this function AND the subsequent `saveCheckpoint` call. The
+ * checkpoint is intentionally returned (rather than auto-persisted) so the
+ * caller can write it AFTER the rest of the Stop-hook work succeeds — that
+ * way a mid-turn crash doesn't permanently advance the offset past
+ * unprocessed transcript lines.
+ *
+ * @param projectRoot the absolute project root (where .claude/goals/active/ lives)
+ * @param transcriptPath the absolute path of the CC session transcript JSONL
+ * @param fallbackPreviousTotal `state.budget.tokens.used` from the loaded state
+ * @returns `{ tokens, rotated, checkpoint }`
+ */
+export function tallyTokensSafe(projectRoot, transcriptPath, fallbackPreviousTotal = 0) {
+  return tallyTokensViaCheckpoint(projectRoot, transcriptPath, fallbackPreviousTotal);
+}
+
+export { saveCheckpoint };
 
 export function tallyTokens(transcriptPath) {
   let text;

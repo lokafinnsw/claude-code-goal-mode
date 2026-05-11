@@ -560,10 +560,27 @@ describe('C. Parser attacks', () => {
     expect(tags.filter(t => t.kind === 'review-request')).toHaveLength(0);
   });
 
-  // C10: case-sensitive task-status
-  it('C10: <task-status>ACHIEVED</task-status> is skipped (case-sensitive check)', () => {
+  // C10: case-insensitive task-status (v2.0.3 bug M7 fix).
+  // Pre-v2.0.3 this was strict-case and silently dropped 'ACHIEVED'/'Achieved'
+  // into "no task-status tag" — agents that paraphrased the prompt would hang
+  // the engine. v2.0.3 normalizes to lowercase before the enum check.
+  it('C10: <task-status>ACHIEVED</task-status> normalizes to "achieved" (v2.0.3 M7)', () => {
     const tags = parseTags('<task-status>ACHIEVED</task-status>');
-    expect(tags.filter(t => t.kind === 'task-status')).toHaveLength(0);
+    const statusTags = tags.filter((t) => t.kind === 'task-status');
+    expect(statusTags).toHaveLength(1);
+    expect(statusTags[0].value).toBe('achieved');
+  });
+
+  it('C10b: <task-status>Blocked</task-status> mixed-case normalizes to "blocked"', () => {
+    const tags = parseTags('<task-status>Blocked</task-status>');
+    const statusTags = tags.filter((t) => t.kind === 'task-status');
+    expect(statusTags).toHaveLength(1);
+    expect(statusTags[0].value).toBe('blocked');
+  });
+
+  it('C10c: <task-status>FROBBLED</task-status> still rejected (unknown value)', () => {
+    const tags = parseTags('<task-status>FROBBLED</task-status>');
+    expect(tags.filter((t) => t.kind === 'task-status')).toHaveLength(0);
   });
 
   // C11: unicode in note/agent round-trips

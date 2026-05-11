@@ -29,7 +29,8 @@ function mkTmpDir(label) {
 }
 
 const FALLBACK = '/some/fallback/dir';
-const deps = (fallbackCwd = FALLBACK) => ({ fs, path, fallbackCwd });
+// Tests inject a no-op stderr writer so warnings don't pollute output.
+const deps = (fallbackCwd = FALLBACK) => ({ fs, path, fallbackCwd, stderrWrite: () => {} });
 
 describe('resolveProjectRoot — happy path: stdin.cwd preferred', () => {
   it('returns stdin.cwd verbatim when absolute + real directory', () => {

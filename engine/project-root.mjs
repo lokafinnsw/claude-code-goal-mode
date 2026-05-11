@@ -31,28 +31,41 @@
  * @param {string} deps.fallbackCwd - Value to use when stdin.cwd is unusable.
  * @returns {string} Absolute project-root path.
  */
-export function resolveProjectRoot(stdin, { fs, path, fallbackCwd }) {
-  const candidate = stdin && typeof stdin === 'object' ? stdin.cwd : null;
-  if (typeof candidate !== 'string' || candidate.length === 0) {
+export function resolveProjectRoot(stdin, { fs, path, fallbackCwd, stderrWrite }) {
+  // Local stderr write wrapper for testability (tests inject a no-op).
+  const warn = typeof stderrWrite === 'function'
+    ? stderrWrite
+    : ((msg) => process.stderr.write(msg));
+
+  const stdinIsObject = stdin && typeof stdin === 'object';
+  const cwdMissing = !stdinIsObject || typeof stdin.cwd !== 'string' || stdin.cwd.length === 0;
+  // Case 1: stdin.cwd entirely missing → fallback. This matches old (pre-cwd-protocol)
+  // CC versions and is the documented backward-compat path.
+  if (cwdMissing) {
     return fallbackCwd;
   }
-  // Absolute-path requirement: Claude Code documents `cwd` as absolute, but
-  // we don't want to silently accept a relative path and resolve it against
-  // the host process's cwd (which would re-introduce the leakage). Reject
-  // anything that doesn't start with '/'.
+  const candidate = stdin.cwd;
+  // Case 2: stdin.cwd present but malformed (relative / non-existent / not-a-dir).
+  // This signals either a CC bug or hand-tampered stdin. Pre-v2.0.3 we silently
+  // fell back to process.cwd(), which could re-introduce the cross-project
+  // leak fixed by v2.0.2. v2.0.3 (bug O3 hardening): emit a diagnostic and
+  // STILL fall back, but the warning gives Claude Code engineers + users a
+  // breadcrumb. We don't hard-fail (return null) because that would break
+  // every hook fire if CC ever ships a corrupt cwd field — better to log
+  // and continue with the conservative best-guess.
   if (!path.isAbsolute(candidate)) {
+    warn(`[goal-mode] resolveProjectRoot: stdin.cwd="${candidate}" is not absolute; falling back to process.cwd()=${fallbackCwd}\n`);
     return fallbackCwd;
   }
-  // Existence check — if the dir doesn't exist, the goal state is also not
-  // going to exist; fall back gives a deterministic error path via the
-  // normal "no active goal" gate downstream.
   try {
     const st = fs.statSync(candidate);
-    if (!st.isDirectory()) return fallbackCwd;
-  } catch {
+    if (!st.isDirectory()) {
+      warn(`[goal-mode] resolveProjectRoot: stdin.cwd="${candidate}" is not a directory; falling back to process.cwd()=${fallbackCwd}\n`);
+      return fallbackCwd;
+    }
+  } catch (err) {
+    warn(`[goal-mode] resolveProjectRoot: stdin.cwd="${candidate}" stat failed (${err.code || err.message}); falling back to process.cwd()=${fallbackCwd}\n`);
     return fallbackCwd;
   }
-  // Normalize to remove trailing slashes, '..', '//' etc., so equality
-  // comparisons elsewhere in the engine are stable.
   return path.resolve(candidate);
 }

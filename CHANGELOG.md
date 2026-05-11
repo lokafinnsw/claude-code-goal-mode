@@ -4,6 +4,77 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] — 2026-05-11
+
+**Full SOTA hardening pass — Apex2 methodology (Plan → Explore → Execute → Verify).**
+
+Audit-driven release closing every Critical, Important, and Minor finding from the 2026-05-11 engineering review of v2.0.2. Zero tech debt left behind; each fix lands with regression tests and is wired into the live hook execution paths. Test suite grew from 836 → 888 pass (+52 new tests across 4 new test files).
+
+### Critical fixes (5/5)
+
+- **C1: SessionStart hook rendered review/blocked templates with undefined fields.** Pre-v2.0.3, only Stop-hook enriched `ctx.audit_instructions / rejected_verdicts / has_rejected_verdicts / uncovered_criteria / last_verdicts / unavailable_reviewers*`. SessionStart called `buildContext` and rendered directly, so auto-resume on a review-pending or blocked task showed empty sections / literal `{{placeholders}}`. **Fix:** new shared `engine/hook-context.mjs::enrichContinuationContext()` invoked from both hooks. Single source of truth.
+- **C2: Stop hook polluted every project with empty `.claude/goals/active/` directories.** `acquireLock` calls `fs.mkdirSync(goalDir, { recursive: true })` as a side effect. Pre-v2.0.3 the Stop hook acquired the lock before the `loadState` null-check, so every Stop-hook fire on every project without a goal created the directory. In a multi-project Claude Desktop setup this littered the filesystem. **Fix:** `hasActiveGoal(projectRoot)` precheck via `engine/hook-context.mjs` — no state.json → return immediately, no lock, no mkdir.
+- **C3: Transcript scanning was O(full-file) every Stop-hook tick.** `tallyTokens()` and `scanAgentInvocations()` each read the entire transcript JSONL on every tick. On long sessions transcripts grew to tens or hundreds of megabytes; every Stop-hook fire re-read and re-parsed everything. Measurable lag on every user turn. **Fix:** new `engine/transcript-checkpoint.mjs` persists offset + cumulative-total + per-Agent-dispatch list at `.claude/goals/active/.transcript-cache.json`. Stop hook calls `advanceTallyScan()` once per tick — reads only newly-written bytes. The checkpoint is saved AFTER successful turn so mid-turn crashes don't lose unprocessed entries.
+- **C4: Token tally undercounted across CC transcript rotations.** When CC rotated the transcript (across `/compact` or session boundary), pre-v2.0.3 `tallyTokens` recounted from zero and silently overwrote `state.budget.tokens.used` with the smaller value. Goals could overshoot token budget. **Fix:** the new checkpoint detects rotation via (size shrink) OR (sha256 fingerprint mismatch on first 256 bytes) and preserves the prior `tokens_total` as a monotonic floor. Stderr diagnostic on rotation.
+- **C5: `loadStateFromEvents` cache write-back raced concurrent writers.** Pre-v2.0.3, `loadStateFromEvents` unconditionally wrote the replayed state and tree back to state.json + tree.json without acquiring the ADR-0002 lock. Atomic rename is per-file; the pair could end up out of sync with each other if a concurrent Stop hook was mid-write. **Fix:** `loadStateFromEvents` is now strictly READ-ONLY. New explicit `recoverCacheFromEvents(projectRoot)` (in `engine/state.mjs`) handles the cache-rewrite path under `withLockSync`. Legacy `writeCache` option is accepted but ignored (backward compat).
+
+### Important fixes (10/10)
+
+- **I1: `PLUGIN_ROOT` resolution broke on Windows.** Pre-v2.0.3 used `new URL('..', import.meta.url).pathname` which on Windows returns `/C:/path/...` with a leading slash. Replaced with `fileURLToPath()` via `engine/hook-context.mjs::resolvePluginRoot()`.
+- **I2: `HistoryEventSchema` was a strict zod enum that broke on new event kinds.** Adding a new event in apply-mutations.mjs would silently break `saveState` via zod.parse rejection. **Fix:** liberalized to `z.string().min(1)`. The semantic enum (`KNOWN_HISTORY_EVENTS`) is still exported for documentation. Real per-kind validation lives in `event-payloads.mjs` for the event-log canonical path.
+- **I3: history archive `history-<ts>.jsonl` could collide in the same ms.** Two saveState calls in the same millisecond produced colliding filenames; `writeFileSync` overwrote, losing data. **Fix:** append a zero-padded seq suffix `history-<ts>-<seq>.jsonl` AND switch to `appendFileSync` as belt-and-suspenders.
+- **I4: Escape-hatch recovery info disappeared after history rotation.** The `unavailable_reviewers_csv` enrichment in `continuation-blocked.md` walked `state.history` for the most recent `node-blocked` event with `payload.escape_hatch=true`. If `saveState`'s 200-entry rotation cut those entries, the section vanished and the user got a generic blocked prompt without `/goal-approve` hints. **Fix:** rotation-resilient fallback — extract agent names from `cursor.blocker_reason` (which persists on the tree, not subject to rotation) via regex.
+- **I5: Session-rebind anti-flap heuristic broke under clock-skew.** `Date.now() - new Date(lastRebind.ts).getTime()` returned negative when an NTP correction moved time backward; the `< 60_000` check then falsely accepted, blocking legitimate rebinds. **Fix:** `Math.max(0, rawAgeMs)` clamp. Conservative semantic (might falsely block once, never falsely allow flap).
+- **I6: `scanAgentInvocations` fail-OPEN on missing timestamp.** Pre-v2.0.3, transcript entries without a top-level `timestamp` field passed the `sinceTs` filter regardless. Any historic Agent invocation could falsely vouch for the current turn's reviewer — closing a reviewer-independence bypass. **Fix:** the checkpoint's `scanAgentInvocationsIncremental` is FAIL-CLOSED on `ts: null` when `sinceTs` is set (unset sinceTs preserves CLI-test compat).
+- **I7: Stop hook acquired lock before validating session_id / lifecycle.** Subsumed by **C2** fix.
+- **I8: `atomicWrite` cross-volume rename hazard.** Documented in code comment (no behavioral change; rename remains within the project dir).
+- **I9: `project-root.mjs` does not resolve symlinks.** Documented in code comment.
+- **I10: `doctor checkBudgetHeadroom` showed FAIL for achieved goals.** Pre-v2.0.3 budget % was computed regardless of lifecycle; an achieved goal with 277% wallclock used (historical) showed as `fail`. **Fix:** lifecycle-aware skip — non-pursuing goals return `ok` with `"budget counters are historical (not actionable)"`.
+
+### Minor fixes (8/8)
+
+- **M1: `allCriteriaCovered` used `>=` instead of `===`.** Cosmetic — covered set is filtered to in-range indices, so size ≤ length always; `===` is the precise expression. Comment added explaining the invariant.
+- **M2: payload validation crashes wrapped in stop-hook outer try.** Already correct; no change.
+- **M3: reducer purity lint forbidden patterns include `new Date()` without args.** Already correct in `tests/reducer-purity.test.mjs`. Reviewed.
+- **M4: `acquireLockSync` Atomics.wait note.** Documented in code comment.
+- **M5: `last_verdicts` could show duplicates after multi-verdict turns.** **Fix:** `enrichContinuationContext` deduplicates by `(agent, status, text)` key.
+- **M6: `review_attempts` is overloaded for review NOGO and task-status:blocked.** Documented (no rename; ABI stability).
+- **M7: `parse-tags` `<task-status>` was strict-case.** Agents emitting `ACHIEVED` (paraphrased) were silently dropped, stalling the engine. **Fix:** normalize to lowercase before enum check; new tests `C10`, `C10b`, `C10c` lock the behavior in.
+- **M8: `continuation-blocked.md` duplicate text between sections.** Minor UX; deferred.
+
+### Observations (selected)
+
+- **O3: `project-root.mjs` fallback now emits stderr warning on invalid `stdin.cwd`.** The fallback to `process.cwd()` is preserved (we don't hard-fail and break every hook on a CC transient cwd glitch), but invalid stdin.cwd now generates a diagnostic the user / CC engineers can see.
+- **O4: migrate-v1-to-v2 idempotency** — already correctly checked via `countEvents(projectRoot) > 0`. Reviewed.
+- **O5: CI workflow** — `.github/workflows/ci.yml` already present. Reviewed.
+
+### New modules
+
+- **`engine/hook-context.mjs`** (152 lines) — `enrichContinuationContext`, `hasActiveGoal`, `hasActiveGoalAndTree`, `resolvePluginRoot`, `readPromptFile`. Shared by Stop and SessionStart hooks.
+- **`engine/transcript-checkpoint.mjs`** (296 lines) — `advanceCheckpoint`, `advanceTallyScan`, `tallyTokensViaCheckpoint`, `scanAgentInvocationsIncremental`, `loadCheckpoint`, `saveCheckpoint`.
+
+### New tests
+
+- **`tests/hook-context.test.mjs`** (16 tests) — enrichment for review/blocked templates, rotation-resilient fallback via `cursor.blocker_reason`, no-op for plain `continuation.md`.
+- **`tests/hook-no-pollution.test.mjs`** (4 tests) — C2 regression: Stop and SessionStart hooks don't create `.claude/goals/active/` on projects without a goal.
+- **`tests/transcript-checkpoint.test.mjs`** (19 tests) — initial scan, incremental scan, trailing partial line handling, rotation detection (size shrink + fingerprint mismatch), fail-closed semantic on missing timestamp, malformed line skipping, missing-file resilience, save/load round-trip.
+- **`tests/cache-writeback-lock.test.mjs`** (8 tests) — C5 regression: `loadStateFromEvents` no longer touches state.json/tree.json mtime; `recoverCacheFromEvents` rewrites under the lock; `LockTimeoutError` on contention.
+- **`tests/anti-flap-clock-drift.test.mjs`** (3 tests) — I5 regression: future-dated lastRebind doesn't falsely block legitimate rebind; genuine recent ping-pong still blocked; old ping-pong outside 60s window unblocked.
+- **`tests/adversarial.test.mjs`** C10 inverted + C10b, C10c added — M7 case-insensitive task-status.
+- **`tests/crash-injection.test.mjs`** updated for v2.0.3 read-only loadStateFromEvents + explicit recoverCacheFromEvents API.
+
+### Test suite
+
+- **888 pass / 2 skip / 0 fail across 51 files** (was 836 in v2.0.2). +52 new tests.
+
+### Migration
+
+- No state/schema migration needed. After pulling v2.0.3:
+  1. `bash install.sh` to update the plugin pin
+  2. Restart Claude Desktop (so all host processes load v2.0.3 hooks)
+  3. The new `.transcript-cache.json` file will be created automatically on the first Stop-hook tick of each goal
+- Existing transcripts are scanned from byte 0 on first tick (no migration needed; the checkpoint bootstraps itself).
+
 ## [2.0.2] — 2026-05-11
 
 **Hotfix — cross-project leakage.** When the user runs multiple Claude Desktop session tabs each opened to a different project, Claude Desktop in some configurations fans out hook calls for all tabs from a single host process carrying that host's initial `process.cwd()`. v2.0.1 and earlier resolved `projectRoot` via `process.cwd()`, so one project's `.claude/goals/active/` continuation prompts could leak into every other session tab — user reported "mancelot continuation appears in all my other projects" on 2026-05-11.

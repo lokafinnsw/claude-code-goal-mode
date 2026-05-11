@@ -107,7 +107,10 @@ function allCriteriaCovered(node) {
       covered.add(ev.criterion_index);
     }
   }
-  return covered.size >= node.acceptance_criteria.length;
+  // Bug M1 fix: cosmetic — covered is filtered to in-range indices above, so
+  // covered.size <= acceptance_criteria.length always. `===` is the precise
+  // expression of "all criteria covered"; `>=` was misleading.
+  return covered.size === node.acceptance_criteria.length;
 }
 
 // Returns a new tree (deep-cloned) with mutations applied, new state, and history entries.

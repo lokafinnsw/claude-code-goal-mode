@@ -256,6 +256,17 @@ export function checkBudgetHeadroom(projectRoot) {
   const id = 'budget-headroom';
   const state = loadState(projectRoot);
   if (!state) return ok(id, 'no goal active');
+  // Bug I10 fix: budget headroom check makes no sense for non-pursuing
+  // goals — the counters are historical, the goal is no longer consuming
+  // budget. Pre-v2.0.3 this surfaced "wallclock budget 277% used" as
+  // FAIL even though the goal achieved a day ago. Lifecycle-aware skip
+  // restores signal-to-noise.
+  if (state.lifecycle !== 'pursuing') {
+    return ok(
+      id,
+      `lifecycle=${state.lifecycle}; budget counters are historical (not actionable)`,
+    );
+  }
   const checks = [];
   for (const [kind, b] of [
     ['iterations', state.budget.iterations],

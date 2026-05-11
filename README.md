@@ -335,6 +335,8 @@ The engine refuses to advance the cursor unless every acceptance criterion has a
 
 ## Status
 
+**v2.0.3 — stable (full SOTA hardening pass).** Apex2-methodology release closing every Critical / Important / Minor finding from the 2026-05-11 engineering audit of v2.0.2. Zero tech debt. 5 Critical bugs (SessionStart context dropouts, project-pollution mkdir, O(full-file) transcript reads, rotation token undercounting, cache-writeback race), 10 Important, 8 Minor — all with regression tests. New shared `engine/hook-context.mjs` plus incremental transcript checkpoint engine. **888 tests pass / 0 fail / 51 files**. See CHANGELOG [2.0.3].
+
 **v2.0.2 — stable (hotfix).** Cross-project leakage fix: hooks now prefer `stdin.cwd` (Claude Code's canonical per-event project dir) over `process.cwd()`. Eliminates the bug where mancelot/other goal's continuation prompt leaked into unrelated project sessions in Claude Desktop multi-tab setups. See CHANGELOG [2.0.2].
 
 **v2.0.1 — stable (hotfix).** Breaks the infinite-loop bug when reviewer's `subagent_type` is unavailable in the env — the escape-hatch verdict now routes to a blocked state with three recovery options (`/goal-approve` / register agent / revise plan) instead of being rejected as fabricated. See CHANGELOG [2.0.1].

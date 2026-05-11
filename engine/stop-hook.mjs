@@ -80,10 +80,19 @@ import { findNodeById } from './traversal.mjs';
 import { buildContext, render } from './continuation.mjs';
 import { notesPath, activeDir, auditsDir } from './paths.mjs';
 import { wallclockMinutes } from './wallclock.mjs';
-import { tallyTokens, checkLimits } from './budget.mjs';
+import { checkLimits } from './budget.mjs';
+import {
+  enrichContinuationContext,
+  hasActiveGoal,
+  readPromptFile,
+  resolvePluginRoot,
+} from './hook-context.mjs';
+import { advanceTallyScan, saveCheckpoint } from './transcript-checkpoint.mjs';
 
+// Backwards-compat alias: existing callers expect `readPrompt(name, root)`.
+// Routed through hook-context.mjs for single source of truth.
 function readPrompt(name, pluginRoot) {
-  return fs.readFileSync(path.join(pluginRoot, 'prompts', name), 'utf8');
+  return readPromptFile(name, pluginRoot);
 }
 
 /**
@@ -105,6 +114,16 @@ function stripCodeRegions(text) {
 }
 
 export async function runStopHook({ stdin, projectRoot }) {
+  // Fast precheck (bug C2 fix): skip lock acquisition entirely when there's
+  // no active goal in this project. acquireLock creates
+  // <projectRoot>/.claude/goals/active/ via mkdirSync as a side effect; in
+  // a multi-project Claude Desktop setup, every Stop-hook fire on every
+  // project without a goal would otherwise leave a paranoid empty
+  // `.claude/goals/active/` behind.
+  if (!hasActiveGoal(projectRoot)) {
+    return { exit: 0, stdout: null };
+  }
+
   // ADR-0002 lock. The Stop hook holds the per-goal lock for the entire
   // read-decide-write sequence so concurrent CLI scripts (pause/resume/etc.)
   // wait for our turn to finish before mutating state. On contention we
@@ -132,8 +151,9 @@ export async function runStopHook({ stdin, projectRoot }) {
     // override CLAUDE_PLUGIN_ROOT after importing this module. In production,
     // Claude Code spawns a fresh CLI per Stop hook so module-level capture
     // would also work — but runtime resolution is strictly more general.
-    const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT
-      ?? path.resolve(new URL('..', import.meta.url).pathname);
+    // (Routed through hook-context.resolvePluginRoot which uses
+    // fileURLToPath so Windows paths with drive letters work correctly.)
+    const PLUGIN_ROOT = resolvePluginRoot(import.meta.url);
 
     const state = loadState(projectRoot);
     if (!state) return { exit: 0, stdout: null };
@@ -175,9 +195,17 @@ export async function runStopHook({ stdin, projectRoot }) {
         .reverse()
         .find((e) => e?.event === 'session-rebound');
       const FLAP_WINDOW_MS = 60_000;
-      const lastRebindAgeMs = lastRebind?.ts
+      // Clock-drift guard (bug I5 fix): clamp to 0 so an NTP correction
+      // between `lastRebind.ts` write and current Date.now() can't produce
+      // a negative age that compares as `< FLAP_WINDOW_MS` and would block a
+      // legitimate rebind. The check is one-sided: a future-dated lastRebind
+      // (clock went BACKWARD after write) is treated as "very recent" =
+      // age=0, which is conservative (might falsely block on flap, never
+      // falsely allow flap). Better to wait one tick than to ping-pong.
+      const rawAgeMs = lastRebind?.ts
         ? Date.now() - new Date(lastRebind.ts).getTime()
         : Infinity;
+      const lastRebindAgeMs = Number.isFinite(rawAgeMs) ? Math.max(0, rawAgeMs) : Infinity;
       const isPingPong = lastRebind
         && lastRebind.payload?.new_session_id === state.session_id
         && lastRebind.payload?.old_session_id === stdin.session_id;
@@ -218,7 +246,40 @@ export async function runStopHook({ stdin, projectRoot }) {
     if (!tree) return { exit: 0, stdout: null };
 
     state.budget.iterations.used += 1;
-    state.budget.tokens.used = tallyTokens(stdin.transcript_path);
+
+    // Reviewer-independence + token tally in ONE pass via the transcript
+    // checkpoint (bugs C3 + C4 + I6 from 2026-05-11 audit):
+    //   - C3: O(new-bytes) per tick instead of O(full-transcript). The
+    //         checkpoint at .claude/goals/active/.transcript-cache.json
+    //         persists offset/fingerprint/cumulative-total/dispatches.
+    //   - C4: rotation-safe monotonic floor on tokens. Detected via
+    //         (size < cached size) OR (sha256 of first 256 bytes differs).
+    //         On rotation, tokens_total = max(carry_over, fresh_total) so a
+    //         /compact or session boundary never silently undercounts.
+    //   - I6: fail-closed on Agent dispatches without a `timestamp` field
+    //         (previously fail-open, which let any historic Agent invocation
+    //         vouch for the current turn's reviewer).
+    // The pendingCheckpoint is saved AFTER the rest of the turn succeeds
+    // so a mid-turn crash doesn't permanently advance the offset past
+    // unprocessed transcript lines.
+    const lastCursorAdvance = [...state.history]
+      .reverse()
+      .find((e) => e.event === 'cursor-advanced' && e.node_id === state.cursor);
+    const sinceTs = lastCursorAdvance?.ts ?? state.started_at ?? null;
+    const tallyScan = advanceTallyScan(
+      projectRoot,
+      stdin.transcript_path,
+      sinceTs,
+      state.budget.tokens.used | 0,
+    );
+    state.budget.tokens.used = tallyScan.tokens;
+    if (tallyScan.rotated) {
+      process.stderr.write(
+        `[goal-mode] transcript rotation detected; preserved tokens floor=${state.budget.tokens.used}\n`,
+      );
+    }
+    const scannedAgents = tallyScan.agents;
+    const pendingCheckpoint = tallyScan.checkpoint;
 
     const limitHit = checkLimits(state.budget);
     if (limitHit) {
@@ -234,6 +295,10 @@ export async function runStopHook({ stdin, projectRoot }) {
         payload: { kind: limitHit },
       });
       saveState(projectRoot, state);
+      // Persist the checkpoint even on the budget-exhausted exit path so
+      // a future doctor diagnostic or manual /goal-resume sees the live
+      // counters without re-scanning the whole transcript.
+      try { saveCheckpoint(projectRoot, pendingCheckpoint); } catch (_) {}
 
       const tpl = readPrompt('budget-limit.md', PLUGIN_ROOT);
       const ctx = {
@@ -260,17 +325,6 @@ export async function runStopHook({ stdin, projectRoot }) {
     const scopedText = stripCodeRegions(lastText);
     const tags = parseTags(scopedText);
     const ts = new Date().toISOString();
-
-    // Reviewer-independence: scan the transcript for Agent tool_use blocks
-    // since the last cursor-advanced event for the current cursor. Pass the
-    // resulting subagent_type Set to applyMutations so audit-verdict tags
-    // for agents we did NOT see dispatched get rejected with a history
-    // entry instead of silently advancing the cursor.
-    const lastCursorAdvance = [...state.history]
-      .reverse()
-      .find((e) => e.event === 'cursor-advanced' && e.node_id === state.cursor);
-    const sinceTs = lastCursorAdvance?.ts ?? state.started_at ?? null;
-    const scannedAgents = scanAgentInvocations(stdin.transcript_path, sinceTs);
 
     const { tree: newTree, state: newState, history: turnHistory } = applyMutations(tree, state, tags, ts, {
       auditsDir: auditsDir(projectRoot),
@@ -313,6 +367,12 @@ export async function runStopHook({ stdin, projectRoot }) {
 
     saveTree(projectRoot, newTree);
     saveState(projectRoot, newState);
+    // Persist transcript checkpoint AFTER successful state save. Failure is
+    // non-fatal — worst case the next tick re-scans the same window. The
+    // ADR-0002 per-goal lock we hold guarantees the write is exclusive.
+    try { saveCheckpoint(projectRoot, pendingCheckpoint); } catch (err) {
+      process.stderr.write(`[goal-mode] transcript checkpoint save failed (non-fatal): ${err.message}\n`);
+    }
 
     // Take a snapshot when the trigger policy says so (cursor-advanced, or
     // boundary crossing). Snapshot is post-state-save so the cached state
@@ -368,59 +428,15 @@ export async function runStopHook({ stdin, projectRoot }) {
       console.error(`[goal-mode] buildContext returned null for cursor ${newState.cursor}`);
       return { exit: 0, stdout: null, error: `buildContext returned null` };
     }
-    if (templateName === 'continuation-review.md') {
-      ctx.audit_instructions = render(readPrompt('audit-instructions.md', PLUGIN_ROOT), ctx);
-      // Surface rejected verdicts from this review cycle so the agent SEES
-      // that a previous verdict was discarded for missing Agent dispatch.
-      // Without this, agent re-emits the same fabricated GO and the cursor
-      // never advances (the "invisible rejection → infinite loop" bug from
-      // v1.2.0 critique A4).
-      const lastCursorAdvanceTs = [...newState.history]
-        .reverse()
-        .find((e) => e.event === 'cursor-advanced' && e.node_id === cursor.id)?.ts
-        ?? newState.started_at;
-      ctx.rejected_verdicts = newState.history
-        .filter(
-          (h) => h.event === 'review-verdict'
-            && h.node_id === cursor.id
-            && h.payload?.rejected === true
-            && (!lastCursorAdvanceTs || h.ts >= lastCursorAdvanceTs),
-        )
-        .map((h) => ({ agent: h.payload.agent, status: h.payload.status, reason: h.payload.reason ?? 'unknown' }));
-      ctx.has_rejected_verdicts = ctx.rejected_verdicts.length > 0;
-    }
-    if (templateName === 'continuation-blocked.md') {
-      const uncovered = ctx.criteria.filter(c => c.covered_marker === ' ');
-      ctx.uncovered_criteria = uncovered;
-      ctx.last_verdicts = newState.history
-        .filter(h => h.event === 'review-verdict' && h.node_id === cursor.id)
-        .slice(-(cursor.review.length || 1))
-        .map(h => ({ agent: h.payload.agent, status: h.payload.status, text: h.payload.text }));
-      // v2.0.1 hotfix: when blocker came from an escape-hatch verdict
-      // (reviewer subagent_type unavailable in environment), surface the
-      // distinct recovery flow (/goal-approve OR register agent OR revise
-      // plan) instead of the generic "address the verdicts and retry"
-      // template. Detect via the most recent node-blocked event carrying
-      // payload.escape_hatch=true.
-      const lastBlocked = [...newState.history]
-        .reverse()
-        .find((e) => e.event === 'node-blocked' && e.node_id === cursor.id);
-      if (lastBlocked?.payload?.escape_hatch === true) {
-        // Walk back from lastBlocked to collect the escape-hatch verdicts
-        // emitted in the same turn (same iteration, escape_hatch=true).
-        const escapeVerdicts = newState.history.filter((h) =>
-          h.event === 'review-verdict'
-          && h.node_id === cursor.id
-          && h.payload?.escape_hatch === true
-          && h.iteration === lastBlocked.iteration,
-        );
-        const agents = [...new Set(escapeVerdicts.map((h) => h.payload.agent))];
-        if (agents.length > 0) {
-          ctx.unavailable_reviewers = agents.map((a) => ({ agent: a }));
-          ctx.unavailable_reviewers_csv = agents.join(', ');
-        }
-      }
-    }
+    // Template-specific enrichment (bug C1 fix — single source of truth for
+    // both Stop and SessionStart hooks). The shared helper adds:
+    //   continuation-review.md: audit_instructions, rejected_verdicts,
+    //                            has_rejected_verdicts
+    //   continuation-blocked.md: uncovered_criteria, last_verdicts (deduped),
+    //                            unavailable_reviewers, unavailable_reviewers_csv
+    //                            (escape-hatch surfacing, robust to history
+    //                            rotation via cursor.blocker_reason fallback)
+    enrichContinuationContext(ctx, templateName, newState, cursor, { pluginRoot: PLUGIN_ROOT });
 
     const rendered = render(readPrompt(templateName, PLUGIN_ROOT), ctx);
 

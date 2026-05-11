@@ -108,8 +108,11 @@ export function parseTags(text) {
   }
 
   // <task-status>value</task-status>
+  // Case-normalised to lowercase: LLMs sometimes emit "ACHIEVED" or
+  // "Achieved" instead of "achieved", and a strict-case match would silently
+  // drop those into "no task-status tag" which stalls the engine. Bug M7 fix.
   for (const m of text.matchAll(/<task-status>([\s\S]*?)<\/task-status>/g)) {
-    const v = m[1].trim();
+    const v = m[1].trim().toLowerCase();
     if (STATUS_VALUES.has(v)) out.push({ kind: 'task-status', value: v });
   }
 

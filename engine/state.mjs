@@ -8,6 +8,7 @@ import { CURRENT_SCHEMA_VERSION, runMigrations } from './migrations.mjs';
 import { findLatestSnapshot } from './snapshots.mjs';
 import { readEvents } from './event-log.mjs';
 import { reduce } from './reducer.mjs';
+import { withLockSync } from './lock.mjs';
 
 export const NodeStatusSchema = z.enum([
   'pending',
@@ -81,7 +82,15 @@ export const LifecycleSchema = z.enum([
   'budget-limited',
 ]);
 
-export const HistoryEventSchema = z.enum([
+// History event tag. v2.0.3 (bug I2 fix) liberalized this from a strict zod
+// enum to a non-empty string so that adding a new event kind in
+// apply-mutations.mjs doesn't immediately break `saveState` (which calls
+// GoalStateSchema.parse). The semantic enum is still maintained here
+// (KNOWN_HISTORY_EVENTS) for documentation and forensic-tool consumption;
+// callers that want the strict check can validate against it explicitly.
+// Real per-event-kind validation lives in event-payloads.mjs (the event-log
+// canonical path) — state.history is a v1 cache, intentionally open-schema.
+export const KNOWN_HISTORY_EVENTS = Object.freeze([
   'plan-created',
   'plan-approved',
   'started',
@@ -99,6 +108,8 @@ export const HistoryEventSchema = z.enum([
   'cleared',
   'session-rebound',
 ]);
+
+export const HistoryEventSchema = z.string().min(1);
 
 export const HistoryEntrySchema = z.object({
   ts: z.string().datetime(),
@@ -251,21 +262,37 @@ export function loadState(projectRoot, opts = {}) {
  *   1. Find latest snapshot under .claude/goals/active/snapshots/.
  *   2. Read events with seq > snapshot.seq (tail).
  *   3. Reduce tail against snapshot.tree + snapshot.state.
- *   4. **rc2 addition:** write the reconstructed {state, tree} back to
- *      state.json / tree.json so the JSON cache stays in sync with the
- *      event-log canonical truth. Subsequent legacy `loadState()` reads
- *      see the same data.
  *
  * Returns null when neither snapshot nor events.jsonl exists. Otherwise
  * returns `{state, tree}` reconstructed from the event log.
  *
  * Synchronous (rc2 — was async in alpha2 via dynamic imports; now static).
  *
- * Pass `{ writeCache: false }` to skip the cache write-back (used by tests
- * that want pure-read semantics).
+ * v2.0.3 (bug C5 fix): cache write-back was REMOVED. The pre-v2.0.3 code
+ * unconditionally wrote the replayed state+tree back to state.json /
+ * tree.json on every loadStateFromEvents call, WITHOUT holding the
+ * ADR-0002 lock. That raced against any concurrent Stop-hook write,
+ * occasionally producing a half-state where state.json was the new value
+ * but tree.json was still the previous (or vice versa) — atomic rename is
+ * atomic per file, not across the pair.
+ *
+ * Cache write-back is a v2.1.0 Phase 8 concern (the full reader-switch
+ * cutover), at which point apply-mutations.mjs becomes event-driven and
+ * the cache becomes a derived projection updated only via the reducer.
+ * Until then, `loadState`/`loadTree` remain the cache-of-record (written
+ * by saveState/saveTree under the per-goal lock) and this function is
+ * read-only — useful for forensic replay and doctor's cache-freshness
+ * check.
+ *
+ * The legacy `opts.writeCache` parameter is accepted but ignored, so any
+ * v2.0.x test or external caller that passed `{ writeCache: false }` still
+ * works (the value is now always false in practice).
  */
 export function loadStateFromEvents(projectRoot, opts = {}) {
-  const { writeCache = true, ...readOpts } = opts;
+  // writeCache option is intentionally ignored as of v2.0.3 (bug C5 fix).
+  // Read-only by construction.
+  // eslint-disable-next-line no-unused-vars
+  const { writeCache: _writeCache, ...readOpts } = opts;
   const latest = findLatestSnapshot(projectRoot);
   const allEvents = readEvents(projectRoot, readOpts);
   let result;
@@ -292,26 +319,40 @@ export function loadStateFromEvents(projectRoot, opts = {}) {
     const tail = allEvents.filter((e) => e.seq > latest.seq);
     result = reduce(latest.snapshot.tree, tail, latest.snapshot.state);
   }
-  if (writeCache && result) {
-    // Cache write-back. Best-effort — failure does NOT invalidate the
-    // returned in-memory result. Useful for diagnostics: the JSON cache is
-    // the form `/goal-status` + doctor + ad-hoc `jq` reads expect. Without
-    // write-back, reading via events would leave state.json stale; doctor's
-    // `state-loadable` check would still pass (it parses what's there) but
-    // the data would diverge from event-log truth.
-    try {
-      fs.mkdirSync(activeDir(projectRoot), { recursive: true });
-      const stateValidated = autoMigrateInput(result.state, 'state');
-      GoalStateSchema.parse(stateValidated);
-      atomicWrite(statePath(projectRoot), JSON.stringify(stateValidated, null, 2));
-      const treeValidated = autoMigrateInput(result.tree, 'tree');
-      GoalTreeSchema.parse(treeValidated);
-      atomicWrite(treePath(projectRoot), JSON.stringify(treeValidated, null, 2));
-    } catch (err) {
-      process.stderr.write(`[goal-mode] loadStateFromEvents cache write-back failed (non-fatal): ${err.message}\n`);
-    }
-  }
   return result;
+}
+
+/**
+ * Explicit crash-cache recovery: replay events into state+tree, take the
+ * ADR-0002 lock, and rewrite the JSON cache. Use this when state.json
+ * and/or tree.json went missing or corrupt and you want the cache restored
+ * from the event-log canonical truth.
+ *
+ * v2.0.3 (bug C5 fix): pre-v2.0.3, `loadStateFromEvents` did this rewrite
+ * unconditionally on every read, WITHOUT the lock. That raced against any
+ * concurrent Stop-hook write and could leave state.json and tree.json
+ * out of sync with each other. The explicit recovery function moved that
+ * dangerous unconditional write to an opt-in API that takes the lock.
+ *
+ * Returns the recovered `{state, tree}` or null when events.jsonl is also
+ * empty/absent. Throws if the lock cannot be acquired within the default
+ * timeout (caller can catch and retry).
+ *
+ * SYNCHRONOUS lock variant (withLockSync) — recovery is rare and short.
+ */
+export function recoverCacheFromEvents(projectRoot) {
+  return withLockSync(activeDir(projectRoot), 'recover-cache-from-events', {}, () => {
+    const result = loadStateFromEvents(projectRoot);
+    if (!result) return null;
+    fs.mkdirSync(activeDir(projectRoot), { recursive: true });
+    const stateValidated = autoMigrateInput(result.state, 'state');
+    GoalStateSchema.parse(stateValidated);
+    atomicWrite(statePath(projectRoot), JSON.stringify(stateValidated, null, 2));
+    const treeValidated = autoMigrateInput(result.tree, 'tree');
+    GoalTreeSchema.parse(treeValidated);
+    atomicWrite(treePath(projectRoot), JSON.stringify(treeValidated, null, 2));
+    return { state: stateValidated, tree: treeValidated };
+  });
 }
 
 /**
@@ -360,9 +401,19 @@ export function saveState(projectRoot, state) {
     const archived = upgraded.history.slice(0, cut);
     const archiveRoot = path.join(projectRoot, '.claude', 'goals', 'archive');
     fs.mkdirSync(archiveRoot, { recursive: true });
+    // Bug I3 fix: ms-precision ts alone can collide if two rotations land in
+    // the same millisecond (test bursts, fast successive Stop-hook fires).
+    // Append a seq suffix that increments until a free filename is found.
+    // Use appendFileSync (not writeFileSync) so any collision that still
+    // slips through writes-appends rather than overwriting.
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const archivePath = path.join(archiveRoot, `history-${ts}.jsonl`);
-    fs.writeFileSync(archivePath, archived.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    let seq = 0;
+    let archivePath;
+    do {
+      archivePath = path.join(archiveRoot, `history-${ts}-${String(seq).padStart(3, '0')}.jsonl`);
+      seq += 1;
+    } while (fs.existsSync(archivePath) && seq < 1000);
+    fs.appendFileSync(archivePath, archived.map((e) => JSON.stringify(e)).join('\n') + '\n');
     upgraded.history = upgraded.history.slice(cut);
   }
   GoalStateSchema.parse(upgraded);

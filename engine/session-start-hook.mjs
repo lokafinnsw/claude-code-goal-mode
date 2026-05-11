@@ -6,25 +6,38 @@
  * doesn't have to type "продолжай" / "/goal-status" to re-engage. Paused /
  * achieved / unmet / no-goal cases are passthroughs (null stdout).
  *
+ * v2.0.3: enrichment context for review-pending / blocked templates now
+ * uses the same shared `enrichContinuationContext` helper as the Stop hook
+ * (bug C1 fix). Previously SessionStart called `buildContext` and rendered
+ * directly, leaving `{{audit_instructions}}`, `{{rejected_verdicts}}`,
+ * `{{unavailable_reviewers_csv}}` etc. as undefined / literal placeholders
+ * in the rendered prompt when the cursor was in review-pending or blocked
+ * state at session start time.
+ *
  * Like stop-hook, this swallows internal errors into a visible block-decision
  * diagnostic so silent stalls are impossible. See engine/stop-hook.mjs for
  * the same error-as-prompt contract.
  */
 
-import path from 'node:path';
 import { loadState, loadTree } from './state.mjs';
 import { findNodeById } from './traversal.mjs';
 import { buildContext, render } from './continuation.mjs';
-import fs from 'node:fs';
-
-function readPrompt(name, pluginRoot) {
-  return fs.readFileSync(path.join(pluginRoot, 'prompts', name), 'utf8');
-}
+import {
+  enrichContinuationContext,
+  hasActiveGoal,
+  readPromptFile,
+  resolvePluginRoot,
+} from './hook-context.mjs';
 
 export async function runSessionStartHook({ stdin, projectRoot }) {
   try {
-    const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT
-      ?? path.resolve(new URL('..', import.meta.url).pathname);
+    // Fast precheck (bug C2 fix): if no active goal in this project, return
+    // immediately. SessionStart doesn't acquire a lock (read-only path) so
+    // the directory-pollution concern is lower than for Stop hook, but the
+    // check still saves a stat + parse cycle per session.
+    if (!hasActiveGoal(projectRoot)) return { exit: 0, stdout: null };
+
+    const PLUGIN_ROOT = resolvePluginRoot(import.meta.url);
 
     const state = loadState(projectRoot);
     if (!state) return { exit: 0, stdout: null };
@@ -53,7 +66,12 @@ export async function runSessionStartHook({ stdin, projectRoot }) {
     const ctx = buildContext(tree, state, state.cursor);
     if (!ctx) return { exit: 0, stdout: null };
 
-    const rendered = render(readPrompt(templateName, PLUGIN_ROOT), ctx);
+    // Bug C1 fix: same enrichment pipeline as Stop hook. Without this,
+    // review-pending / blocked auto-resume rendered with empty / placeholder
+    // strings where the template expected real fields.
+    enrichContinuationContext(ctx, templateName, state, cursor, { pluginRoot: PLUGIN_ROOT });
+
+    const rendered = render(readPromptFile(templateName, PLUGIN_ROOT), ctx);
 
     // SessionStart hook payload: additionalContext is injected before the
     // user's first message of the new session.
