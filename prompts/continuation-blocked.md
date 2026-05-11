@@ -13,6 +13,35 @@ The task **{{task_title}}** (id: `{{task_id}}`) is currently blocked.
 **Last review verdicts:**
 {{#each last_verdicts}}- {{agent}} ({{status}}): {{text}}
 {{/each}}{{/if}}
+{{#if unavailable_reviewers}}
+
+## ⚠ Reviewer agent unavailable in this environment
+
+The cursor is stuck because the following reviewer subagent_type(s) are NOT registered in your current Claude environment: **{{unavailable_reviewers_csv}}**.
+
+**Recovery (pick one):**
+
+1. **Manual approve** — fastest, no setup. In the goal's session, run:
+   ```
+   /goal-mode:goal-approve {{task_id}}
+   ```
+   This bypasses the missing reviewer for this task and advances the cursor.
+
+2. **Register the reviewer agent** — durable, fixes future review gates too. Create `~/.claude/agents/<agent-name>.md` with YAML frontmatter:
+   ```
+   ---
+   name: <one of {{unavailable_reviewers_csv}}>
+   description: <one-line description>
+   tools: Read, Bash, Grep, Glob
+   ---
+   <body of reviewer system prompt>
+   ```
+   Then reload the plugin / restart the CLI and re-emit `<task-status>achieved</task-status>` with fresh evidence; the engine will dispatch the now-available reviewer automatically.
+
+3. **Revise the plan** — if the named reviewer is the wrong agent for this task, edit the tree's `review` field for this node and reload the goal.
+
+After applying one of the recoveries, the next Stop-hook turn will pick up the new state — no further action needed in this prompt.
+{{/if}}
 
 ## Acceptance criteria still uncovered
 {{#each uncovered_criteria}}- (#{{index}}) {{text}}

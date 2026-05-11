@@ -180,17 +180,50 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
 
   const verdictsRaw = tags.filter(t => t.kind === 'audit-verdict');
 
+  // Escape-hatch pattern: when a reviewer's subagent_type is unavailable in
+  // the environment, commands/goal-review.md and prompts/continuation-review.md
+  // instruct the assistant to emit
+  //   <audit-verdict agent="..." status="REVISE">unavailable; user must run /goal-approve</audit-verdict>
+  // without an Agent dispatch (because the subagent literally cannot be
+  // dispatched). This is NOT a fabricated verdict — it's a documented signal
+  // that the user must intervene. The reviewer-independence detector must
+  // recognize it and route through a distinct flow; otherwise the same
+  // prompt fires every Stop-hook turn and the user sees an infinite loop
+  // (the v2.0.0 regression user-reported on 2026-05-11).
+  const ESCAPE_HATCH_RE = /^\s*unavailable\b/i;
+  const isEscapeHatch = (v) => v.status === 'REVISE' && ESCAPE_HATCH_RE.test(v.text || '');
+
   // Reviewer-independence enforcement: when opts.scannedAgents is provided
   // (a Set<string> of subagent_types that the assistant actually dispatched
   // via the Agent tool in this turn's transcript), reject any verdict whose
-  // agent doesn't appear in the set. Rejected verdicts produce a history
-  // entry with payload.rejected=true and are excluded from the allGo / anyNo
-  // tally — i.e., they do not advance or block the cursor. When the option
-  // is undefined, all verdicts pass through unchanged (backward compat).
+  // agent doesn't appear in the set — UNLESS the verdict matches the
+  // escape-hatch pattern above, in which case it is treated as a legitimate
+  // unavailable-reviewer signal and the cursor is marked blocked with a
+  // specific recovery hint (skipping the 3-cycle blocked threshold).
+  // Rejected verdicts produce a history entry with payload.rejected=true and
+  // are excluded from the allGo / anyNo tally. When the option is undefined,
+  // all verdicts pass through unchanged (backward compat).
   const verdicts = [];
+  const escapeHatchVerdicts = [];
   if (opts.scannedAgents !== undefined && verdictsRaw.length > 0 && cursorNode.status === 'review-pending') {
     for (const v of verdictsRaw) {
       if (!opts.scannedAgents.has(v.agent)) {
+        if (isEscapeHatch(v)) {
+          escapeHatchVerdicts.push(v);
+          history.push({
+            ts,
+            iteration: state.budget.iterations.used,
+            event: 'review-verdict',
+            node_id: cursorNode.id,
+            payload: {
+              agent: v.agent,
+              status: v.status,
+              text: v.text,
+              escape_hatch: true,
+            },
+          });
+          continue;
+        }
         history.push({
           ts,
           iteration: state.budget.iterations.used,
@@ -210,6 +243,27 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
     }
   } else {
     verdicts.push(...verdictsRaw);
+  }
+
+  // If any escape-hatch verdict was emitted this turn, short-circuit the
+  // normal allGo/anyNo flow and mark the cursor as blocked immediately.
+  // Rationale: the reviewer can't be dispatched in this environment, so
+  // re-prompting the agent to "dispatch the Agent tool" loops forever. The
+  // user must either /goal-approve to override or register the reviewer
+  // agent (e.g. ~/.claude/agents/<name>.md) and retry. Blocking on first
+  // occurrence (vs the standard 3-strike threshold) gives the user the
+  // recovery hint in the next Stop-hook prompt without N cycles of spam.
+  if (escapeHatchVerdicts.length > 0 && cursorNode.status === 'review-pending') {
+    const unavailable = [...new Set(escapeHatchVerdicts.map(v => v.agent))];
+    cursorNode.status = 'blocked';
+    cursorNode.blocker_reason = `reviewer agent(s) unavailable in this environment: ${unavailable.join(', ')}. Run /goal-mode:goal-approve ${cursorNode.id} to override manually, or register the agent(s) (e.g. ~/.claude/agents/<name>.md with matching name: field) and re-trigger review.`;
+    history.push({
+      ts,
+      iteration: state.budget.iterations.used,
+      event: 'node-blocked',
+      node_id: cursorNode.id,
+      payload: { reason: cursorNode.blocker_reason, escape_hatch: true },
+    });
   }
 
   if (verdicts.length > 0 && cursorNode.status === 'review-pending') {

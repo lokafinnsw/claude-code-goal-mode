@@ -396,6 +396,30 @@ export async function runStopHook({ stdin, projectRoot }) {
         .filter(h => h.event === 'review-verdict' && h.node_id === cursor.id)
         .slice(-(cursor.review.length || 1))
         .map(h => ({ agent: h.payload.agent, status: h.payload.status, text: h.payload.text }));
+      // v2.0.1 hotfix: when blocker came from an escape-hatch verdict
+      // (reviewer subagent_type unavailable in environment), surface the
+      // distinct recovery flow (/goal-approve OR register agent OR revise
+      // plan) instead of the generic "address the verdicts and retry"
+      // template. Detect via the most recent node-blocked event carrying
+      // payload.escape_hatch=true.
+      const lastBlocked = [...newState.history]
+        .reverse()
+        .find((e) => e.event === 'node-blocked' && e.node_id === cursor.id);
+      if (lastBlocked?.payload?.escape_hatch === true) {
+        // Walk back from lastBlocked to collect the escape-hatch verdicts
+        // emitted in the same turn (same iteration, escape_hatch=true).
+        const escapeVerdicts = newState.history.filter((h) =>
+          h.event === 'review-verdict'
+          && h.node_id === cursor.id
+          && h.payload?.escape_hatch === true
+          && h.iteration === lastBlocked.iteration,
+        );
+        const agents = [...new Set(escapeVerdicts.map((h) => h.payload.agent))];
+        if (agents.length > 0) {
+          ctx.unavailable_reviewers = agents.map((a) => ({ agent: a }));
+          ctx.unavailable_reviewers_csv = agents.join(', ');
+        }
+      }
     }
 
     const rendered = render(readPrompt(templateName, PLUGIN_ROOT), ctx);

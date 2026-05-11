@@ -335,6 +335,8 @@ The engine refuses to advance the cursor unless every acceptance criterion has a
 
 ## Status
 
+**v2.0.1 — stable (hotfix).** Breaks the infinite-loop bug when reviewer's `subagent_type` is unavailable in the env — the escape-hatch verdict now routes to a blocked state with three recovery options (`/goal-approve` / register agent / revise plan) instead of being rejected as fabricated. See CHANGELOG [2.0.1].
+
 **v2.0.0 — stable.** Full v2-track ADR-0001 + ADR-0002 shipped. **All 7 G1 acceptance gates closed** (G1.1 determinism, G1.2 v1→v2 migration, G1.3 cold replay <500ms@10k events, G1.4 warm replay <100ms@10k, G1.5 crash injection 5 modes, G1.6 reducer purity lint, G1.7 self-meta against live goal). Cumulative: 15-kind event taxonomy, ULID-sorted log, pure reducer (no Date.now / Math.random / fs / process.env), snapshots, transactional turn batches, snapshot-aware loadStateFromEvents (forensic/recovery), v1→v2 migration, file-based advisory lock (ADR-0002, v1.3.0). Phase 8 reader-switch cutover deferred to v2.1.0 — requires apply-mutations refactor to fix dual-write doubling (filed as known limitation).
 
 **v1.3.0 — stable.** Concurrent session locking landed (ADR-0002). Stability & UX SOTA pass (v1.2.0) + patch (v1.2.1) closing all ten self-critique gaps. All foundational phases plus seven new product surfaces:

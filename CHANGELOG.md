@@ -4,6 +4,30 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] — 2026-05-11
+
+**Hotfix.** Breaks an infinite-loop bug introduced in v2.0.0 when a reviewer's `subagent_type` is unavailable in the user's Claude environment.
+
+### Fixed
+
+- **Escape-hatch ↔ reviewer-independence detector contradiction.** v2.0.0 shipped the documented escape hatch (`commands/goal-review.md` line 62: "emit `<audit-verdict status=\"REVISE\">unavailable; user must run /goal-approve</audit-verdict>` when subagent unavailable") AND the new fabricated-verdict detector that rejected any verdict without a matching `Agent` tool_use in the transcript. The escape-hatch verdict, by definition, has no Agent dispatch (the subagent literally cannot be dispatched). Result: every Stop-hook turn re-fired the same review-pending prompt with a "rejected verdict" warning, and the assistant could neither dispatch (impossible) nor escape (rejected). User reported this as an infinite loop on 2026-05-11.
+- **Fix** (`engine/apply-mutations.mjs`): the detector now recognizes the escape-hatch pattern (`status=REVISE` AND text starts with `unavailable`, case-insensitive, after optional leading whitespace) and routes it through a distinct flow: cursor is marked `blocked` immediately (not after the 3-strike threshold) with a `blocker_reason` carrying the three recovery options (`/goal-approve` / register agent / revise plan). The verdict is logged with `payload.escape_hatch=true` rather than `payload.rejected=true`.
+- **`prompts/continuation-blocked.md`** — added a conditional `## ⚠ Reviewer agent unavailable in this environment` section that surfaces when the cursor was blocked via the escape-hatch path. Lists the three recovery commands with copy-paste-ready bodies (manual approve / register `~/.claude/agents/<name>.md` / revise plan).
+- **`engine/stop-hook.mjs`** — when rendering `continuation-blocked.md`, walk back from the most recent `node-blocked` event and populate `ctx.unavailable_reviewers` / `ctx.unavailable_reviewers_csv` if `payload.escape_hatch === true`. Otherwise the section is omitted.
+
+### Tests
+
+- **`tests/escape-hatch.test.mjs`** — 10 new regression tests covering: blocking on first occurrence, history event shape, distinction from fabricated verdicts, case-insensitive matching, leading-whitespace tolerance, non-REVISE statuses not triggering the path, mid-sentence "unavailable" not triggering, multi-reviewer combined blocker reason, and pursuing-state no-op (matches existing applyMutations contract). All pass.
+- Updated `tests/__snapshots__/continuation.test.mjs.snap` to reflect the new conditional section in `continuation-blocked.md` (empty when `unavailable_reviewers` is absent).
+
+### Test suite
+
+- 819 pass / 2 skip / 0 fail across 45 files (was 809 in v2.0.0; +10 from this hotfix).
+
+### Why this slipped past v2.0.0 G1 gates
+
+The G1 acceptance gates verified reducer determinism, replay perf, migration correctness, crash recovery, purity, and self-meta against the goal-mode self-improvement goal — none of them exercise the **end-to-end live Stop-hook prompt loop** under "reviewer unavailable" conditions. The Mancelot project (where reviewer registration is project-specific) hit the real-world case first. v2.1.0 backlog now includes a synthetic Stop-hook loop test as G2.X to prevent this class of regression.
+
 ## [2.0.0] — 2026-05-11
 
 **General Availability.** All 7 ADR-0001 G1 acceptance gates closed. ADR-0001 (event log) + ADR-0002 (concurrent session locking) shipped. Phase 9 perf + purity gates land.
