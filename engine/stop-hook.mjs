@@ -72,7 +72,10 @@ import { loadState, loadTree, saveState, saveTree } from './state.mjs';
 import { readLastAssistantText, scanAgentInvocations } from './transcript.mjs';
 import { parseTags } from './parse-tags.mjs';
 import { applyMutations } from './apply-mutations.mjs';
-import { appendEvent } from './event-log.mjs';
+import { appendEvent, appendTurnEvents } from './event-log.mjs';
+import { acquireLock, releaseLock, LockTimeoutError } from './lock.mjs';
+import { shouldSnapshot, snapshotAndGc } from './snapshots.mjs';
+import { randomUUID } from 'node:crypto';
 import { findNodeById } from './traversal.mjs';
 import { buildContext, render } from './continuation.mjs';
 import { notesPath, activeDir, auditsDir } from './paths.mjs';
@@ -102,6 +105,28 @@ function stripCodeRegions(text) {
 }
 
 export async function runStopHook({ stdin, projectRoot }) {
+  // ADR-0002 lock. The Stop hook holds the per-goal lock for the entire
+  // read-decide-write sequence so concurrent CLI scripts (pause/resume/etc.)
+  // wait for our turn to finish before mutating state. On contention we
+  // return null stdout with a stderr diagnostic — Claude Code interprets as
+  // "no continuation prompt", which is the correct outcome when another
+  // process is mid-mutation. (A 5s wait would unnecessarily block the user's
+  // chat.)
+  let lockHandle = null;
+  try {
+    lockHandle = await acquireLock(activeDir(projectRoot), 'stop-hook-tick', {
+      sessionId: stdin?.session_id,
+      timeoutMs: 5000,
+    });
+  } catch (err) {
+    if (err instanceof LockTimeoutError) {
+      process.stderr.write(
+        `[goal-mode] Stop-hook lock contention: ${err.message}. Skipping this turn — another process is mid-mutation. Will retry on next user turn.\n`,
+      );
+      return { exit: 0, stdout: null, error: err.message };
+    }
+    throw err;
+  }
   try {
     // PLUGIN_ROOT is resolved at runtime (not module-load time) so tests can
     // override CLAUDE_PLUGIN_ROOT after importing this module. In production,
@@ -261,29 +286,48 @@ export async function runStopHook({ stdin, projectRoot }) {
     // Order: events first, state.json second. Crash between → events.jsonl
     // is authoritative truth, recovery via replayEvents reconstructs state.
     // (v1.2.0 wrote state first, leaving events stale on crash.)
+    // Per ADR-0001 §Event taxonomy + Phase 4 dual-write rc1: emit one
+    // turn-grouped event batch per Stop-hook fire. All events from this turn
+    // share a single `turn_id` and consecutive `seq` values; a single
+    // `appendFileSync` call gives POSIX-atomic visibility at the OS level.
+    //
+    // Order: events first, state.json second. A crash between leaves
+    // events.jsonl authoritative; recovery via reducer replay reconstructs.
+    // Per ADR-0001 §Snapshot policy: snapshot is taken after the events land
+    // when `shouldSnapshot(turnEvents, before, after)` is true.
+    let turnEventsForSnapshot = [];
+    let seqAfter = -1;
     try {
-      // Per-turn budget-tick so replay can reconstruct budget counters.
-      appendEvent(projectRoot, {
-        ts,
-        iteration: newState.budget.iterations.used,
-        kind: 'budget-tick',
-        payload: {
-          iterations_used: newState.budget.iterations.used,
-          tokens_used: newState.budget.tokens.used,
-          session_id: newState.session_id,
-        },
-        derived_from_tag: null,
-      });
-      for (const h of turnHistory) emitEventForHistoryEntry(projectRoot, h);
+      const turnId = randomUUID();
+      const turnEvents = buildTurnEventPartials(newState, turnHistory, ts);
+      if (turnEvents.length > 0) {
+        const emitted = appendTurnEvents(projectRoot, turnId, turnEvents);
+        turnEventsForSnapshot = emitted;
+        seqAfter = emitted[emitted.length - 1].seq;
+      }
     } catch (err) {
       // Event-log write failures must NOT block engine forward progress.
-      // The v1 path (state.history) is still authoritative; events.jsonl is
-      // additive durability. Surface the failure via stderr for diagnostics.
+      // The v1 path (state.history) is still authoritative until rc2.
       process.stderr.write(`[goal-mode] event-log append failed (non-fatal): ${err.message}\n`);
     }
 
     saveTree(projectRoot, newTree);
     saveState(projectRoot, newState);
+
+    // Take a snapshot when the trigger policy says so (cursor-advanced, or
+    // boundary crossing). Snapshot is post-state-save so the cached state
+    // matches the snapshot — replay self-validates on next load. Best-effort
+    // (non-fatal failure logged to stderr).
+    try {
+      if (turnEventsForSnapshot.length > 0) {
+        const seqBefore = turnEventsForSnapshot[0].seq - 1;
+        if (shouldSnapshot(turnEventsForSnapshot, seqBefore, seqAfter)) {
+          snapshotAndGc(projectRoot, seqAfter, newState, newTree);
+        }
+      }
+    } catch (err) {
+      process.stderr.write(`[goal-mode] snapshot failed (non-fatal): ${err.message}\n`);
+    }
 
     // Append iteration digest BEFORE lifecycle branching, so terminal turns
     // (achieved/unmet) are also logged. Cursor may not exist post-mutation
@@ -411,6 +455,8 @@ export async function runStopHook({ stdin, projectRoot }) {
       },
       error: errMsg,
     };
+  } finally {
+    if (lockHandle) releaseLock(lockHandle);
   }
 }
 
@@ -475,49 +521,197 @@ function appendNotesDigest(projectRoot, state, cursor, ts) {
  * meaning (state changed) become event-log entries; informational history
  * entries do not. Replay (state-from-events) uses these to reconstruct state.
  */
-function emitEventForHistoryEntry(projectRoot, h) {
-  const HISTORY_TO_EVENT_KIND = {
-    'evidence-added': 'evidence-recorded',
-    'cursor-advanced': 'cursor-advanced',
-    'node-blocked': 'blocker-set',
-    'review-requested': 'review-requested',
-    'session-rebound': 'session-rebound',
-    'achieved': 'lifecycle-changed',
-    'unmet': 'lifecycle-changed',
-    'budget-warning': 'budget-tick',
-    'budget-exhausted': 'budget-tick',
-  };
+/**
+ * Convert this turn's mutations into an ordered array of event partials.
+ * Used by Phase 4 dual-write: callers pass to `appendTurnEvents` for a
+ * single atomic batch.
+ *
+ * Ordering matters for replay determinism: budget-tally first (counters),
+ * then per-history-entry events in the order they fired in applyMutations.
+ */
+function buildTurnEventPartials(newState, turnHistory, ts) {
+  const goalId = newState.goal_id;
+  const wallclockElapsedSec = Math.floor(
+    (Date.now() - new Date(newState.budget.wallclock.started_at).getTime()) / 1000,
+  );
+  const partials = [];
+  // Budget-tally always emitted (per-turn cumulative counters).
+  partials.push({
+    ts,
+    goal_id: goalId,
+    kind: 'budget-tally',
+    payload: {
+      iterations: { used: newState.budget.iterations.used, max: newState.budget.iterations.max },
+      tokens: { used: newState.budget.tokens.used, max: newState.budget.tokens.max },
+      wallclock: {
+        elapsed_seconds: wallclockElapsedSec,
+        max_seconds: newState.budget.wallclock.max_seconds,
+      },
+    },
+  });
+  for (const h of turnHistory) {
+    const ev = historyToEventPartial(h, goalId);
+    if (ev) partials.push(ev);
+  }
+  return partials;
+}
+
+function historyToEventPartial(h, goalId) {
+  if (h.event === 'evidence-added') {
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'evidence-added',
+      payload: {
+        cursor: h.node_id ?? h.payload?.cursor ?? 'unknown',
+        criterion_index: h.payload?.criterion ?? null,
+        file: h.payload?.file ?? null,
+        command: h.payload?.command ?? null,
+        note: h.payload?.note ?? 'recorded from history',
+      },
+    };
+  }
+  if (h.event === 'cursor-advanced') {
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'cursor-advanced',
+      payload: {
+        from: h.payload?.from ?? h.node_id ?? 'unknown',
+        to: h.payload?.to ?? h.node_id ?? 'unknown',
+        reason: h.payload?.reason === 'review-go' ? 'review-go'
+              : h.payload?.from === 'manual-approve' ? 'manual-approve'
+              : 'achieved',
+      },
+    };
+  }
+  if (h.event === 'node-blocked') {
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'node-blocked',
+      payload: {
+        cursor: h.node_id ?? 'unknown',
+        reason: h.payload?.reason ?? 'no reason recorded',
+        review_attempts: h.payload?.review_attempts ?? 0,
+      },
+    };
+  }
+  if (h.event === 'review-requested') {
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'review-requested',
+      payload: { cursor: h.node_id ?? 'unknown', agents: h.payload?.agents ?? [] },
+    };
+  }
   if (h.event === 'review-verdict') {
-    // Split-kind based on rejected flag in payload.
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'audit-verdict-received',
+      payload: {
+        cursor: h.node_id ?? 'unknown',
+        agent: h.payload?.agent ?? 'unknown',
+        status: h.payload?.status ?? 'NOGO',
+        text: h.payload?.text ?? '',
+        rejected: h.payload?.rejected ?? false,
+        reason: h.payload?.reason,
+      },
+    };
+  }
+  if (h.event === 'achieved' || h.event === 'unmet') {
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'lifecycle-changed',
+      payload: { from: 'pursuing', to: h.event, reason: h.payload?.reason ?? null },
+    };
+  }
+  if (h.event === 'budget-exhausted') {
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'budget-exhausted',
+      payload: {
+        which: h.payload?.kind ?? 'iterations',
+        used: h.payload?.used ?? 0,
+        max: h.payload?.max ?? 0,
+      },
+    };
+  }
+  return null;
+}
+
+// Legacy single-event emitter (used by tests + non-stop-hook paths). Phase 4
+// stop-hook now uses appendTurnEvents directly via buildTurnEventPartials.
+function emitEventForHistoryEntry(projectRoot, h, goalId) {
+  // Map state.history events to ADR-0001 §Event taxonomy kinds + correct
+  // payload shape. Some history events have no event-log equivalent
+  // (informational digest, session-rebound which is an internal engine
+  // concept) — those return early.
+  if (h.event === 'evidence-added') {
     appendEvent(projectRoot, {
-      ts: h.ts,
-      iteration: h.iteration,
-      kind: h.payload?.rejected ? 'review-verdict-rejected' : 'review-verdict-accepted',
-      payload: { ...h.payload, node_id: h.node_id },
-      derived_from_tag: 'audit-verdict',
+      ts: h.ts, goal_id: goalId, kind: 'evidence-added',
+      payload: {
+        cursor: h.node_id ?? h.payload?.cursor ?? 'unknown',
+        criterion_index: h.payload?.criterion ?? null,
+        file: h.payload?.file ?? null,
+        command: h.payload?.command ?? null,
+        note: h.payload?.note ?? 'recorded from history',
+      },
     });
     return;
   }
-  const mappedKind = HISTORY_TO_EVENT_KIND[h.event];
-  if (!mappedKind) return; // not a state-mutating event we care about
-  const enrichedPayload = { ...h.payload, node_id: h.node_id };
-  if (h.event === 'achieved' || h.event === 'unmet') enrichedPayload.to = h.event;
-  appendEvent(projectRoot, {
-    ts: h.ts,
-    iteration: h.iteration,
-    kind: mappedKind,
-    payload: enrichedPayload,
-    derived_from_tag: deriveTagOrigin(h.event),
-  });
-}
-
-function deriveTagOrigin(historyEvent) {
-  switch (historyEvent) {
-    case 'evidence-added': return 'evidence';
-    case 'cursor-advanced': return null;
-    case 'node-blocked': return 'task-status';
-    case 'review-requested': return 'review-request';
-    case 'session-rebound': return null;
-    default: return null;
+  if (h.event === 'cursor-advanced') {
+    appendEvent(projectRoot, {
+      ts: h.ts, goal_id: goalId, kind: 'cursor-advanced',
+      payload: {
+        from: h.payload?.from ?? h.node_id ?? 'unknown',
+        to: h.payload?.to ?? h.node_id ?? 'unknown',
+        reason: h.payload?.reason === 'review-go' ? 'review-go'
+              : h.payload?.from === 'manual-approve' ? 'manual-approve'
+              : 'achieved',
+      },
+    });
+    return;
   }
+  if (h.event === 'node-blocked') {
+    appendEvent(projectRoot, {
+      ts: h.ts, goal_id: goalId, kind: 'node-blocked',
+      payload: {
+        cursor: h.node_id ?? 'unknown',
+        reason: h.payload?.reason ?? 'no reason recorded',
+        review_attempts: h.payload?.review_attempts ?? 0,
+      },
+    });
+    return;
+  }
+  if (h.event === 'review-requested') {
+    appendEvent(projectRoot, {
+      ts: h.ts, goal_id: goalId, kind: 'review-requested',
+      payload: { cursor: h.node_id ?? 'unknown', agents: h.payload?.agents ?? [] },
+    });
+    return;
+  }
+  if (h.event === 'review-verdict') {
+    appendEvent(projectRoot, {
+      ts: h.ts, goal_id: goalId, kind: 'audit-verdict-received',
+      payload: {
+        cursor: h.node_id ?? 'unknown',
+        agent: h.payload?.agent ?? 'unknown',
+        status: h.payload?.status ?? 'NOGO',
+        text: h.payload?.text ?? '',
+        rejected: h.payload?.rejected ?? false,
+        reason: h.payload?.reason,
+      },
+    });
+    return;
+  }
+  if (h.event === 'achieved' || h.event === 'unmet') {
+    appendEvent(projectRoot, {
+      ts: h.ts, goal_id: goalId, kind: 'lifecycle-changed',
+      payload: { from: 'pursuing', to: h.event, reason: h.payload?.reason ?? null },
+    });
+    return;
+  }
+  if (h.event === 'budget-exhausted') {
+    appendEvent(projectRoot, {
+      ts: h.ts, goal_id: goalId, kind: 'budget-exhausted',
+      payload: {
+        which: h.payload?.kind ?? 'iterations',
+        used: h.payload?.used ?? 0,
+        max: h.payload?.max ?? 0,
+      },
+    });
+    return;
+  }
+  // session-rebound, budget-warning, evidence-required etc — no spec event
+  // kind; pass through as state.history only.
 }

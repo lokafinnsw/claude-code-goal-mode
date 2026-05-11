@@ -27,6 +27,7 @@ import { activeDir, statePath, treePath } from './paths.mjs';
 import {
   loadState,
   loadTree,
+  loadStateFromEvents as _loadStateFromEvents,
   GoalStateSchema,
   GoalTreeSchema,
 } from './state.mjs';
@@ -328,6 +329,103 @@ export const FIXERS = {
 // Registry ----------------------------------------------------------------
 
 /**
+ * Cache-vs-event-log drift detection (Phase 7 reader-switch).
+ *
+ * When event-log is canonical and state.json/tree.json are caches, the
+ * cache must stay in sync with replayed-from-events state. Drift indicates:
+ *   (a) Manual `jq` patch to state.json that bypassed event emission, OR
+ *   (b) Engine crash mid-write that left cache out of date.
+ *
+ * Either case is a real bug to surface. Check compares `state.cursor` (the
+ * most user-visible drift signal) between cache and replay.
+ */
+export function checkCacheFreshness(projectRoot) {
+  const id = 'cache-freshness';
+  const sp = statePath(projectRoot);
+  const tp = treePath(projectRoot);
+  if (!fs.existsSync(sp) && !fs.existsSync(tp)) return ok(id, 'no cache to check (no active goal)');
+  const cache = loadState(projectRoot);
+  if (!cache) return ok(id, 'state.json missing or unreadable (separate check handles this)');
+  const eventsFile = path.join(activeDir(projectRoot), 'events.jsonl');
+  if (!fs.existsSync(eventsFile)) return ok(id, 'no event log (legacy v1 mode; cache is authoritative)');
+  // Heavy-ish: full replay. Cheap enough on a 200-line log; if perf becomes
+  // an issue, switch to a hash-comparison strategy.
+  let replayed;
+  try {
+    // Dynamic import to avoid hard dependency in doctor when run against
+    // projects where the v2 modules aren't installed (very edge case).
+    // Falls back to "ok unable to verify" on any failure.
+    const fn = globalThis._loadStateFromEventsForDoctor;
+    if (typeof fn !== 'function') {
+      // Default: call the module function directly. We can't `await` here
+      // (doctor checks are sync), but loadStateFromEvents is now sync.
+      replayed = loadStateFromEventsLazy(projectRoot);
+    } else {
+      replayed = fn(projectRoot, { writeCache: false });
+    }
+  } catch (err) {
+    return warn(id, `replay verification failed: ${err.message}`, 'inspect events.jsonl for corruption; run /goal-mode:goal-doctor with stderr captured');
+  }
+  if (!replayed) return ok(id, 'event log present but replay returned null (no events post-skeleton); cache assumed authoritative');
+  if (cache.cursor !== replayed.state.cursor) {
+    return fail(
+      id,
+      `cache cursor "${cache.cursor}" ≠ event-log cursor "${replayed.state.cursor}"`,
+      'cache is stale relative to event log. Run `node "$CLAUDE_PLUGIN_ROOT"/engine/migrate-v1-to-v2.mjs --force` (regenerates cache from events) OR delete state.json+tree.json then run /goal-mode:goal-status (auto-regenerates).',
+    );
+  }
+  if (cache.lifecycle !== replayed.state.lifecycle) {
+    return warn(
+      id,
+      `cache lifecycle "${cache.lifecycle}" ≠ event-log lifecycle "${replayed.state.lifecycle}"`,
+      'minor drift; non-blocking but inspect state.history vs events.jsonl tail',
+    );
+  }
+  return ok(id, `cache in sync with event log (cursor=${cache.cursor}, lifecycle=${cache.lifecycle})`);
+}
+
+// Lazy require to avoid a hard dependency cycle in modules that don't need
+// the event-sourced read path.
+function loadStateFromEventsLazy(projectRoot) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // Note: ESM has no `require`; use dynamic import in a sync wrapper via
+  // import.meta.resolve isn't sync either. We accept this limitation: doctor
+  // can't compute drift without async, so we use the live module reference.
+  // In practice state.mjs imports this module, so circular at module load.
+  // Simplest: import statically at top of doctor.mjs and accept the cycle.
+  return _loadStateFromEvents(projectRoot, { writeCache: false });
+}
+
+/**
+ * v2-migrated status — reports whether this project has been migrated from
+ * v1 to v2 (events.jsonl populated) or is still on the legacy state.json
+ * canonical-read path.
+ */
+export function checkV2Migrated(projectRoot) {
+  const id = 'v2-migrated';
+  const adir = activeDir(projectRoot);
+  if (!fs.existsSync(adir)) return ok(id, 'no active goal in this project');
+  const hasState = fs.existsSync(statePath(projectRoot));
+  const hasTree = fs.existsSync(treePath(projectRoot));
+  const hasEvents = fs.existsSync(path.join(adir, 'events.jsonl'));
+  if (!hasState && !hasTree && !hasEvents) return ok(id, 'no active goal');
+  if (hasEvents && !hasState && !hasTree) {
+    return ok(id, 'v2-native: event log only (no legacy JSON cache)');
+  }
+  if (hasEvents && (hasState || hasTree)) {
+    return ok(id, 'v2-migrated: event log populated alongside legacy JSON cache (dual-write rc1 mode)');
+  }
+  if ((hasState || hasTree) && !hasEvents) {
+    return warn(
+      id,
+      'v1 project not yet migrated — events.jsonl missing',
+      'run: node "$CLAUDE_PLUGIN_ROOT"/engine/migrate-v1-to-v2.mjs (idempotent; backups preserved as .pre-v2-migration-<ts>)',
+    );
+  }
+  return ok(id, 'state indeterminate');
+}
+
+/**
  * Pre-migration backup retention — warn when more than 3 backups accumulate.
  * Auto-fixable via `doctor --fix` (deletes oldest backups, keeps newest 3).
  */
@@ -381,6 +479,8 @@ export const CHECKS = {
   'budget-headroom': checkBudgetHeadroom,
   'event-log-present': checkEventLogPresent,
   'pre-migration-backup-retention': checkPreMigrationBackupRetention,
+  'v2-migrated': checkV2Migrated,
+  'cache-freshness': checkCacheFreshness,
 };
 
 // Orchestrator ------------------------------------------------------------

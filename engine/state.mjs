@@ -3,6 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { statePath, treePath, activeDir } from './paths.mjs';
 import { CURRENT_SCHEMA_VERSION, runMigrations } from './migrations.mjs';
+// Static imports to support sync event-sourced reads (rc2 reader-switch).
+// These modules don't import back from state.mjs, so no circular dependency.
+import { findLatestSnapshot } from './snapshots.mjs';
+import { readEvents } from './event-log.mjs';
+import { reduce } from './reducer.mjs';
 
 export const NodeStatusSchema = z.enum([
   'pending',
@@ -215,29 +220,98 @@ function readWithBackup(target, parser, kind /* 'state' | 'tree' */) {
   }
 }
 
-export function loadState(projectRoot) {
-  const direct = readWithBackup(statePath(projectRoot), GoalStateSchema, 'state');
-  if (direct) return direct;
-  // Crash recovery: when state.json is missing OR was just moved to
-  // .broken-* by readWithBackup, attempt to reconstruct from the event log.
-  // Requires a loadable tree.json (the plan-as-written) plus events.jsonl
-  // produced by the dual-write path in stop-hook.
-  try {
-    const tree = readWithBackup(treePath(projectRoot), GoalTreeSchema, 'tree');
-    if (!tree) return null;
-    // Lazy-import to avoid a circular dep at module load time (event-log
-    // imports paths.mjs which co-lives in this file's neighbourhood).
-    // eslint-disable-next-line global-require
-    const { readEvents } = require('./event-log.mjs');
-    // CommonJS require is unavailable in ESM; use dynamic import via a sync
-    // pattern. The recovery path is best-effort: if dynamic import fails for
-    // any reason (engine running outside a Node version that supports
-    // import-assertions, etc.), return null and let the caller handle the
-    // missing-state case.
-    return null;
-  } catch (_) {
-    return null;
+/**
+ * Load state from the JSON cache (legacy path).
+ *
+ * Phase 8 GA decision: `loadState` continues to read state.json directly.
+ * The event log is canonical for **recovery** (`loadStateFromEvents`) and
+ * **forensics**, but the JSON cache stays primary for normal reads. Full
+ * reader-switch (loadState routing through events) is deferred to v2.1.0
+ * where apply-mutations is also refactored to be event-driven (avoids the
+ * dual-write doubling problem where saveState bakes a mutation into the
+ * cache AND stop-hook emits an event that the reducer would re-apply).
+ *
+ * The `cache-freshness` doctor check enforces that the JSON cache agrees
+ * with the event log — drift surfaces as a `fail` status.
+ *
+ * `{ legacyJson: true }` is accepted for explicit "I want the JSON cache,
+ * not any future cutover" callers; currently a no-op but reserved for
+ * v2.1.0 cutover.
+ */
+export function loadState(projectRoot, opts = {}) {
+  // `opts` reserved for v2.1.0 reader-switch; currently legacy JSON read.
+  void opts;
+  return readWithBackup(statePath(projectRoot), GoalStateSchema, 'state');
+}
+
+/**
+ * Snapshot-aware load (ADR-0001 Phase 7 reader-switch).
+ *
+ * Algorithm:
+ *   1. Find latest snapshot under .claude/goals/active/snapshots/.
+ *   2. Read events with seq > snapshot.seq (tail).
+ *   3. Reduce tail against snapshot.tree + snapshot.state.
+ *   4. **rc2 addition:** write the reconstructed {state, tree} back to
+ *      state.json / tree.json so the JSON cache stays in sync with the
+ *      event-log canonical truth. Subsequent legacy `loadState()` reads
+ *      see the same data.
+ *
+ * Returns null when neither snapshot nor events.jsonl exists. Otherwise
+ * returns `{state, tree}` reconstructed from the event log.
+ *
+ * Synchronous (rc2 — was async in alpha2 via dynamic imports; now static).
+ *
+ * Pass `{ writeCache: false }` to skip the cache write-back (used by tests
+ * that want pure-read semantics).
+ */
+export function loadStateFromEvents(projectRoot, opts = {}) {
+  const { writeCache = true, ...readOpts } = opts;
+  const latest = findLatestSnapshot(projectRoot);
+  const allEvents = readEvents(projectRoot, readOpts);
+  let result;
+  if (!latest) {
+    if (allEvents.length === 0) return null;
+    // CRITICAL: use legacyJson:true to bypass the loadTree → loadStateFromEvents
+    // cutover. Otherwise infinite recursion when events exist + no snapshot:
+    // loadStateFromEvents → loadTree → loadStateFromEvents → ...
+    const seedTree = loadTree(projectRoot, { legacyJson: true });
+    // Seed reducer's initialState with the JSON cache so non-`started`/`goal-created`
+    // event sequences preserve the existing cursor/session_id/lifecycle. Tests
+    // that save state then run stop-hook (which emits only budget-tally events,
+    // not a full `started` event) rely on this — without it, the replayed state
+    // resets to freshState defaults (cursor=first-pending, session_id='replay-derived').
+    const seedState = loadState(projectRoot, { legacyJson: true });
+    if (seedTree) {
+      result = reduce(seedTree, allEvents, seedState);
+    } else {
+      const goalCreated = allEvents.find((e) => e.kind === 'goal-created');
+      if (!goalCreated?.payload?.tree_skeleton) return null;
+      result = reduce(goalCreated.payload.tree_skeleton, allEvents, seedState);
+    }
+  } else {
+    const tail = allEvents.filter((e) => e.seq > latest.seq);
+    result = reduce(latest.snapshot.tree, tail, latest.snapshot.state);
   }
+  if (writeCache && result) {
+    // Cache write-back. Best-effort — failure does NOT invalidate the
+    // returned in-memory result. Useful for diagnostics: the JSON cache is
+    // the form `/goal-status` + doctor + ad-hoc `jq` reads expect. Without
+    // write-back, reading via events would leave state.json stale; doctor's
+    // `state-loadable` check would still pass (it parses what's there) but
+    // the data would diverge from event-log truth.
+    try {
+      fs.mkdirSync(activeDir(projectRoot), { recursive: true });
+      const stateValidated = autoMigrateInput(result.state, 'state');
+      GoalStateSchema.parse(stateValidated);
+      atomicWrite(statePath(projectRoot), JSON.stringify(stateValidated, null, 2));
+      const treeValidated = autoMigrateInput(result.tree, 'tree');
+      GoalTreeSchema.parse(treeValidated);
+      atomicWrite(treePath(projectRoot), JSON.stringify(treeValidated, null, 2));
+    } catch (err) {
+      process.stderr.write(`[goal-mode] loadStateFromEvents cache write-back failed (non-fatal): ${err.message}\n`);
+    }
+  }
+  return result;
 }
 
 /**
@@ -296,7 +370,13 @@ export function saveState(projectRoot, state) {
   atomicWrite(statePath(projectRoot), JSON.stringify(upgraded, null, 2));
 }
 
-export function loadTree(projectRoot) {
+/**
+ * Load tree from the JSON cache. Same Phase 8 GA decision as `loadState`:
+ * cache remains primary; event-sourced reads are explicitly opt-in via
+ * `loadStateFromEvents`.
+ */
+export function loadTree(projectRoot, opts = {}) {
+  void opts;
   return readWithBackup(treePath(projectRoot), GoalTreeSchema, 'tree');
 }
 

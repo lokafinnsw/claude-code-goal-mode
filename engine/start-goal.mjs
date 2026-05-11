@@ -33,8 +33,11 @@ import { loadTree, loadState, saveState } from './state.mjs';
 import { walkLeafTasks } from './traversal.mjs';
 import { CURRENT_SCHEMA_VERSION } from './migrations.mjs';
 import { appendEvent } from './event-log.mjs';
+import { activeDir } from './paths.mjs';
+import { withLockSync } from './lock.mjs';
 
 export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBudgetSeconds, force = false }) {
+  return withLockSync(activeDir(projectRoot), 'goal-start', { sessionId }, () => {
   const tree = loadTree(projectRoot);
   if (!tree) return { ok: false, error: 'no goal tree found; run /goal:plan first' };
   if (!tree.approved_at) return { ok: false, error: 'tree not approved; run /goal:approve-plan' };
@@ -90,19 +93,18 @@ export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBu
   try {
     appendEvent(projectRoot, {
       ts: now,
-      iteration: 0,
-      kind: 'goal-started',
+      goal_id: tree.goal_id,
+      kind: 'started',
       payload: {
-        goal_id: tree.goal_id,
         session_id: sessionId,
-        cursor: firstActive.id,
-        started_at: now,
         budget: state.budget,
+        started_at: now,
+        cursor: firstActive.id,
       },
-      derived_from_tag: null,
     });
   } catch (err) {
-    process.stderr.write(`[goal-mode] startGoal: event-log goal-started failed (non-fatal): ${err.message}\n`);
+    process.stderr.write(`[goal-mode] startGoal: event-log started failed (non-fatal): ${err.message}\n`);
   }
   return { ok: true, cursor: firstActive.id };
+  });
 }

@@ -92,7 +92,7 @@ describe('#1 replay completeness: goal-started + budget-tick events', () => {
     const events = [
       {
         id: 'e1', ts: '2026-05-11T10:00:00.000Z', iteration: 0,
-        kind: 'goal-started',
+        kind: 'started',
         payload: {
           goal_id: 'g',
           session_id: 'real-uuid',
@@ -119,13 +119,13 @@ describe('#1 replay completeness: goal-started + budget-tick events', () => {
   it('budget-tick events advance counters monotonically', () => {
     const tree = makeTree();
     const events = [
-      { id: 'e1', ts: '2026-05-11T10:00:00.000Z', iteration: 0, kind: 'goal-started',
+      { id: 'e1', ts: '2026-05-11T10:00:00.000Z', iteration: 0, kind: 'started',
         payload: { budget: { iterations: { used: 0, max: 10 }, tokens: { used: 0, max: 1000 }, wallclock: { started_at: '2026-05-11T10:00:00.000Z', max_seconds: 100 } } },
         derived_from_tag: null },
-      { id: 'e2', ts: '2026-05-11T10:01:00.000Z', iteration: 1, kind: 'budget-tick',
-        payload: { iterations_used: 1, tokens_used: 100 }, derived_from_tag: null },
-      { id: 'e3', ts: '2026-05-11T10:02:00.000Z', iteration: 2, kind: 'budget-tick',
-        payload: { iterations_used: 2, tokens_used: 250 }, derived_from_tag: null },
+      { id: 'e2', ts: '2026-05-11T10:01:00.000Z', iteration: 1, kind: 'budget-tally',
+        payload: { iterations: { used: 1, max: 10 }, tokens: { used: 100, max: 1000 }, wallclock: { elapsed_seconds: 60, max_seconds: 100 } } },
+      { id: 'e3', ts: '2026-05-11T10:02:00.000Z', iteration: 2, kind: 'budget-tally',
+        payload: { iterations: { used: 2, max: 10 }, tokens: { used: 250, max: 1000 }, wallclock: { elapsed_seconds: 120, max_seconds: 100 } } },
     ];
     const { state } = replayEvents(tree, events);
     expect(state.budget.iterations.used).toBe(2);
@@ -140,7 +140,7 @@ describe('#1 replay completeness: goal-started + budget-tick events', () => {
     });
     expect(result.ok).toBe(true);
     const events = readEvents(root);
-    const started = events.find((e) => e.kind === 'goal-started');
+    const started = events.find((e) => e.kind === 'started');
     expect(started).toBeTruthy();
     expect(started.payload.session_id).toBe('sess-start');
     expect(started.payload.budget.iterations.max).toBe(50);
@@ -211,8 +211,13 @@ describe('#4 event-log + state.history rotation', () => {
     const lines = [];
     for (let i = 0; i < ROTATE_THRESHOLD + 50; i++) {
       lines.push(JSON.stringify({
-        id: `id-${i}`, ts: new Date(Date.now() + i).toISOString(), iteration: i,
-        kind: 'budget-tick', payload: { i }, derived_from_tag: null,
+        id: `id-${i}`, ts: new Date(Date.now() + i).toISOString(),
+        seq: i, goal_id: 'g', schema_version: 1, kind: 'budget-tally', turn_id: null,
+        payload: {
+          iterations: { used: i, max: 1000 },
+          tokens: { used: 0, max: 0 },
+          wallclock: { elapsed_seconds: 0, max_seconds: 0 },
+        },
       }));
     }
     fs.writeFileSync(eventsPath(root), lines.join('\n') + '\n');
@@ -411,9 +416,9 @@ describe('#10 stop-hook writes events BEFORE state.json', () => {
         projectRoot: root,
       });
       const events = readEvents(root);
-      const tick = events.find((e) => e.kind === 'budget-tick');
+      const tick = events.find((e) => e.kind === 'budget-tally');
       expect(tick).toBeTruthy();
-      expect(tick.payload.iterations_used).toBeGreaterThan(0);
+      expect(tick.payload.iterations.used).toBeGreaterThan(0);
     } finally {
       spy.mockRestore();
       process.stderr.write = origWrite;

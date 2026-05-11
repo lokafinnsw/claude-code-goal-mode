@@ -25,6 +25,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { loadTree, saveTree, loadState, saveState } from './state.mjs';
 import { validatePlan } from './validate-plan.mjs';
+import { activeDir } from './paths.mjs';
+import { withLockSync } from './lock.mjs';
 
 export function discoverReviewers(searchDirs = defaultSearchDirs()) {
   const out = new Set();
@@ -68,6 +70,7 @@ function countTasks(node) {
  *   - any other lifecycle → REFUSE with error; preserves the user's run.
  */
 export function approvePlan(projectRoot, opts = {}) {
+  return withLockSync(activeDir(projectRoot), 'approve-plan', {}, () => {
   const tree = loadTree(projectRoot);
   if (!tree) {
     return { ok: false, errors: ['no tree.json; run /goal:plan first'], warnings: [] };
@@ -126,6 +129,7 @@ export function approvePlan(projectRoot, opts = {}) {
   saveState(projectRoot, state);
 
   return { ok: true, errors: [], warnings: result.warnings, taskCount: countTasks(tree.root) };
+  });
 }
 
 // CLI entry — guarded so tests can `import` this file and call the exported

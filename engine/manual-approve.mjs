@@ -47,7 +47,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadTree, loadState, saveTree, saveState } from './state.mjs';
 import { findNodeById, nextPendingTaskAfter } from './traversal.mjs';
-import { auditsDir } from './paths.mjs';
+import { auditsDir, activeDir } from './paths.mjs';
+import { withLockSync } from './lock.mjs';
 
 // Defensive filename sanitization (mirrors apply-mutations.mjs): node.id
 // comes from user-edited tree.json. If it contains '/' or other path-illegal
@@ -60,6 +61,7 @@ function safeFilenamePart(s) {
 }
 
 export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
+  return withLockSync(activeDir(projectRoot), 'manual-approve', {}, () => {
   const state = loadState(projectRoot);
   if (!state) return { ok: false, error: 'No active goal.' };
   if (state.lifecycle !== 'pursuing') {
@@ -139,4 +141,5 @@ export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   saveState(projectRoot, state);
 
   return { ok: true, cursor: state.cursor };
+  });
 }

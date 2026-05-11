@@ -756,13 +756,19 @@ describe('T: Documentation accuracy', () => {
   });
 
   // T1b: README Status section headline must reflect current package.json version.
-  // Pattern accepts both em-dash and hyphen between version and label.
+  // Pattern accepts both em-dash and hyphen between version and label, and any
+  // of (stable, pre-release, alpha, beta, rc) suffix. Pre-release versions
+  // shouldn't claim "stable"; this lets the README mark them appropriately.
   it('T1 [BUG]: README Status section headline must match package.json version', () => {
     const pkg = JSON.parse(readFile('package.json'));
-    const expected = new RegExp(`v${pkg.version.replace(/\./g, '\\.')}\\s*[—-]\\s*stable`, 'i');
+    const versionEsc = pkg.version.replace(/\./g, '\\.');
+    const expected = new RegExp(
+      `v${versionEsc}\\s*[—-]\\s*(stable|pre-?release|release\\s+candidate|release|alpha\\d*|beta\\d*|rc\\d*)`,
+      'i',
+    );
     expect(
       expected.test(readme),
-      `README Status section should headline current version ${pkg.version}.`,
+      `README Status section should headline current version ${pkg.version} with an appropriate stability marker (stable / pre-release / alpha / beta / rc).`,
     ).toBe(true);
   });
 

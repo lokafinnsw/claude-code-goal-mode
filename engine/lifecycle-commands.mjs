@@ -30,29 +30,32 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadState, loadTree, saveState } from './state.mjs';
 import { activeDir, archiveDir } from './paths.mjs';
+import { withLockSync } from './lock.mjs';
 
 /**
  * Pause an active (pursuing) goal. Records paused_at and appends a
  * 'paused' history event. Refuses unless lifecycle === 'pursuing'.
  */
 export function pauseGoal(projectRoot) {
-  const state = loadState(projectRoot);
-  if (!state) return { ok: false, error: 'No active goal.' };
-  if (state.lifecycle !== 'pursuing') {
-    return { ok: false, error: `cannot pause from lifecycle=${state.lifecycle}` };
-  }
-  const now = new Date().toISOString();
-  state.lifecycle = 'paused';
-  state.paused_at = now;
-  state.history.push({
-    ts: now,
-    iteration: state.budget.iterations.used,
-    event: 'paused',
-    node_id: state.cursor,
-    payload: {},
+  return withLockSync(activeDir(projectRoot), 'goal-pause', {}, () => {
+    const state = loadState(projectRoot);
+    if (!state) return { ok: false, error: 'No active goal.' };
+    if (state.lifecycle !== 'pursuing') {
+      return { ok: false, error: `cannot pause from lifecycle=${state.lifecycle}` };
+    }
+    const now = new Date().toISOString();
+    state.lifecycle = 'paused';
+    state.paused_at = now;
+    state.history.push({
+      ts: now,
+      iteration: state.budget.iterations.used,
+      event: 'paused',
+      node_id: state.cursor,
+      payload: {},
+    });
+    saveState(projectRoot, state);
+    return { ok: true };
   });
-  saveState(projectRoot, state);
-  return { ok: true };
 }
 
 /**
@@ -62,6 +65,7 @@ export function pauseGoal(projectRoot) {
  * a 'resumed' history event.
  */
 export function resumeGoal(projectRoot) {
+  return withLockSync(activeDir(projectRoot), 'goal-resume', {}, () => {
   const state = loadState(projectRoot);
   if (!state) {
     return {
@@ -113,6 +117,7 @@ export function resumeGoal(projectRoot) {
   });
   saveState(projectRoot, state);
   return { ok: true };
+  });
 }
 
 /**
@@ -124,20 +129,19 @@ export function resumeGoal(projectRoot) {
 export function clearGoal(projectRoot, { archive = false } = {}) {
   const adir = activeDir(projectRoot);
   if (!fs.existsSync(adir)) return { ok: true, noop: true };
-  let archivedTo = null;
-  if (archive) {
-    const tree = loadTree(projectRoot);
-    const slug = tree?.goal_id ?? 'unknown';
-    // Full ISO timestamp (with `:` and `.` replaced for filesystem safety) so
-    // each clear gets a unique archive — same-day, same-goal_id second clear
-    // would otherwise overwrite the prior archive.
-    const isoSafe = new Date().toISOString().replace(/[:.]/g, '-');
-    archivedTo = path.join(archiveDir(projectRoot), `${isoSafe}-${slug}`);
-    fs.mkdirSync(archivedTo, { recursive: true });
-    fs.cpSync(adir, archivedTo, { recursive: true });
-  }
-  fs.rmSync(adir, { recursive: true, force: true });
-  return { ok: true, archivedTo };
+  return withLockSync(adir, 'goal-clear', {}, () => {
+    let archivedTo = null;
+    if (archive) {
+      const tree = loadTree(projectRoot);
+      const slug = tree?.goal_id ?? 'unknown';
+      const isoSafe = new Date().toISOString().replace(/[:.]/g, '-');
+      archivedTo = path.join(archiveDir(projectRoot), `${isoSafe}-${slug}`);
+      fs.mkdirSync(archivedTo, { recursive: true });
+      fs.cpSync(adir, archivedTo, { recursive: true });
+    }
+    fs.rmSync(adir, { recursive: true, force: true });
+    return { ok: true, archivedTo };
+  });
 }
 
 /**
@@ -152,22 +156,24 @@ export function clearGoal(projectRoot, { archive = false } = {}) {
 const ABANDONABLE_LIFECYCLES = new Set(['pursuing', 'paused']);
 
 export function abandonGoal(projectRoot, { reason = 'manual abandon' } = {}) {
-  const state = loadState(projectRoot);
-  if (!state) return { ok: false, error: 'No active goal.' };
-  if (!ABANDONABLE_LIFECYCLES.has(state.lifecycle)) {
-    return { ok: false, error: `cannot abandon from lifecycle=${state.lifecycle}` };
-  }
-  const now = new Date().toISOString();
-  state.lifecycle = 'unmet';
-  state.ended_at = now;
-  state.ended_reason = reason;
-  state.history.push({
-    ts: now,
-    iteration: state.budget.iterations.used,
-    event: 'unmet',
-    node_id: state.cursor,
-    payload: { reason },
+  return withLockSync(activeDir(projectRoot), 'goal-abandon', {}, () => {
+    const state = loadState(projectRoot);
+    if (!state) return { ok: false, error: 'No active goal.' };
+    if (!ABANDONABLE_LIFECYCLES.has(state.lifecycle)) {
+      return { ok: false, error: `cannot abandon from lifecycle=${state.lifecycle}` };
+    }
+    const now = new Date().toISOString();
+    state.lifecycle = 'unmet';
+    state.ended_at = now;
+    state.ended_reason = reason;
+    state.history.push({
+      ts: now,
+      iteration: state.budget.iterations.used,
+      event: 'unmet',
+      node_id: state.cursor,
+      payload: { reason },
+    });
+    saveState(projectRoot, state);
+    return { ok: true };
   });
-  saveState(projectRoot, state);
-  return { ok: true };
 }

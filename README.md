@@ -335,7 +335,9 @@ The engine refuses to advance the cursor unless every acceptance criterion has a
 
 ## Status
 
-**v1.2.1 — stable.** Stability & UX SOTA pass + patch closing all ten self-critique gaps from v1.2.0. All foundational phases plus six new product surfaces:
+**v2.0.0 — stable.** Full v2-track ADR-0001 + ADR-0002 shipped. **All 7 G1 acceptance gates closed** (G1.1 determinism, G1.2 v1→v2 migration, G1.3 cold replay <500ms@10k events, G1.4 warm replay <100ms@10k, G1.5 crash injection 5 modes, G1.6 reducer purity lint, G1.7 self-meta against live goal). Cumulative: 15-kind event taxonomy, ULID-sorted log, pure reducer (no Date.now / Math.random / fs / process.env), snapshots, transactional turn batches, snapshot-aware loadStateFromEvents (forensic/recovery), v1→v2 migration, file-based advisory lock (ADR-0002, v1.3.0). Phase 8 reader-switch cutover deferred to v2.1.0 — requires apply-mutations refactor to fix dual-write doubling (filed as known limitation).
+
+**v1.3.0 — stable.** Concurrent session locking landed (ADR-0002). Stability & UX SOTA pass (v1.2.0) + patch (v1.2.1) closing all ten self-critique gaps. All foundational phases plus seven new product surfaces:
 
 **New in v1.2.0:**
 - **`/goal-mode:goal-doctor`** — one-shot health diagnostic with 9 checks (state/tree validity, schema version, broken backups, cursor resolution, plugin pin freshness, Stop-hook liveness, budget headroom, event-log presence). Each check has a concrete fix command.
