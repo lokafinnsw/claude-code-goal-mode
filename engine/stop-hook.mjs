@@ -69,9 +69,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadState, loadTree, saveState, saveTree } from './state.mjs';
-import { readLastAssistantText } from './transcript.mjs';
+import { readLastAssistantText, scanAgentInvocations } from './transcript.mjs';
 import { parseTags } from './parse-tags.mjs';
 import { applyMutations } from './apply-mutations.mjs';
+import { appendEvent } from './event-log.mjs';
 import { findNodeById } from './traversal.mjs';
 import { buildContext, render } from './continuation.mjs';
 import { notesPath, activeDir, auditsDir } from './paths.mjs';
@@ -111,20 +112,80 @@ export async function runStopHook({ stdin, projectRoot }) {
 
     const state = loadState(projectRoot);
     if (!state) return { exit: 0, stdout: null };
-    // Session-id matching: strict in both CLI and Desktop. start-goal-cli now
-    // resolves the session id via env var OR transcript-dir scan, so
-    // state.session_id IS the same UUID Stop-hook stdin delivers in either
-    // environment. Mismatch means the goal was started in a different session
-    // — emit stderr so the misconfiguration is visible (the previous silent
-    // no-op made this very hard to diagnose).
+    // Session-id matching with auto-rebind:
+    //
+    //   A live Stop-hook arrives only from a live Claude session. If
+    //   state.session_id points elsewhere AND lifecycle === 'pursuing',
+    //   the prior session is presumed closed/compacted — auto-rebind to
+    //   the live session so users don't have to jq-patch state.json after
+    //   every /compact or new-session-on-same-project.
+    //
+    //   Anti-flap guard: if state.session_id was itself rebound in the
+    //   last 5 history entries, two parallel sessions are fighting over
+    //   the same goal — refuse to flip-flop and emit stderr so the
+    //   user knows to pause one with /goal-mode:goal-pause.
+    //
+    //   Paused goals: never auto-rebind. The user explicitly paused, so
+    //   we honour that and pass through silently.
     if (stdin.session_id && state.session_id !== stdin.session_id) {
+      if (state.lifecycle !== 'pursuing') {
+        // Paused / achieved / unmet / budget-limited — pass through.
+        return { exit: 0, stdout: null };
+      }
+      // Anti-flap heuristic: trigger ONLY when there's strong evidence that
+      // two parallel sessions are fighting — not after any single legitimate
+      // rebind. Two signals together must be true:
+      //
+      //   (a) The most recent rebound event in state.history happened within
+      //       the last 60 seconds. A long-ago rebound (e.g., yesterday's
+      //       /compact) is not a flap — the prior session is dead by now.
+      //   (b) That rebound's new_session_id equals the current state.session_id
+      //       AND was rebound FROM the session id that's now firing the Stop
+      //       hook. That's the actual ping-pong pattern: A→B then immediately B→A.
+      //
+      // A single recent rebind from session X to session Y, followed minutes
+      // later by Stop hook from session Z (different from both), is normal —
+      // user closed X, opened Y briefly, closed Y, opened Z. Auto-rebind to Z.
+      const lastRebind = [...(state.history ?? [])]
+        .reverse()
+        .find((e) => e?.event === 'session-rebound');
+      const FLAP_WINDOW_MS = 60_000;
+      const lastRebindAgeMs = lastRebind?.ts
+        ? Date.now() - new Date(lastRebind.ts).getTime()
+        : Infinity;
+      const isPingPong = lastRebind
+        && lastRebind.payload?.new_session_id === state.session_id
+        && lastRebind.payload?.old_session_id === stdin.session_id;
+      if (isPingPong && lastRebindAgeMs < FLAP_WINDOW_MS) {
+        process.stderr.write(
+          `[goal-mode] Stop-hook anti-flap: state.session_id="${state.session_id}" was rebound to `
+          + `from "${stdin.session_id}" ${Math.round(lastRebindAgeMs / 1000)}s ago; refusing to ping-pong back. `
+          + `Two parallel Claude sessions appear to be sharing this goal. Pause one with `
+          + `/goal-mode:goal-pause, or jq-patch state.json to the session you want to drive.\n`,
+        );
+        return { exit: 0, stdout: null };
+      }
+      const oldId = state.session_id;
+      const rebindTs = new Date().toISOString();
+      state.session_id = stdin.session_id;
+      state.history.push({
+        ts: rebindTs,
+        iteration: state.budget.iterations.used,
+        event: 'session-rebound',
+        node_id: state.cursor,
+        payload: {
+          old_session_id: oldId,
+          new_session_id: stdin.session_id,
+          reason: 'live Stop hook from new session while lifecycle=pursuing; prior session presumed closed/compacted',
+        },
+      });
+      saveState(projectRoot, state);
       process.stderr.write(
-        `[goal-mode] Stop-hook short-circuit: state.session_id="${state.session_id}" ` +
-        `≠ stdin.session_id="${stdin.session_id}". The active goal was started in a different ` +
-        `Claude session. To recover, run /goal-mode:goal-clear and re-/goal-mode:goal-start, ` +
-        `or jq-patch state.json to set session_id="${stdin.session_id}".\n`,
+        `[goal-mode] Stop-hook session rebind: state.session_id "${oldId}" → "${stdin.session_id}" `
+        + `(prior session closed/compacted; lifecycle=pursuing). `
+        + `To prevent auto-rebind, pause the goal with /goal-mode:goal-pause.\n`,
       );
-      return { exit: 0, stdout: null };
+      // Fall through to normal pursuing path.
     }
     if (state.lifecycle !== 'pursuing') return { exit: 0, stdout: null };
 
@@ -174,9 +235,52 @@ export async function runStopHook({ stdin, projectRoot }) {
     const scopedText = stripCodeRegions(lastText);
     const tags = parseTags(scopedText);
     const ts = new Date().toISOString();
-    const { tree: newTree, state: newState } = applyMutations(tree, state, tags, ts, {
+
+    // Reviewer-independence: scan the transcript for Agent tool_use blocks
+    // since the last cursor-advanced event for the current cursor. Pass the
+    // resulting subagent_type Set to applyMutations so audit-verdict tags
+    // for agents we did NOT see dispatched get rejected with a history
+    // entry instead of silently advancing the cursor.
+    const lastCursorAdvance = [...state.history]
+      .reverse()
+      .find((e) => e.event === 'cursor-advanced' && e.node_id === state.cursor);
+    const sinceTs = lastCursorAdvance?.ts ?? state.started_at ?? null;
+    const scannedAgents = scanAgentInvocations(stdin.transcript_path, sinceTs);
+
+    const { tree: newTree, state: newState, history: turnHistory } = applyMutations(tree, state, tags, ts, {
       auditsDir: auditsDir(projectRoot),
+      scannedAgents,
     });
+
+    // Dual-write: in addition to state.history (the v1 path), append every
+    // mutation as an event-log entry. The event log is the future source of
+    // truth (v1.2.0 introduces it as parallel; a later major migration can
+    // collapse to events-only). See engine/event-log.mjs and
+    // engine/state-from-events.mjs for replay semantics.
+    //
+    // Order: events first, state.json second. Crash between → events.jsonl
+    // is authoritative truth, recovery via replayEvents reconstructs state.
+    // (v1.2.0 wrote state first, leaving events stale on crash.)
+    try {
+      // Per-turn budget-tick so replay can reconstruct budget counters.
+      appendEvent(projectRoot, {
+        ts,
+        iteration: newState.budget.iterations.used,
+        kind: 'budget-tick',
+        payload: {
+          iterations_used: newState.budget.iterations.used,
+          tokens_used: newState.budget.tokens.used,
+          session_id: newState.session_id,
+        },
+        derived_from_tag: null,
+      });
+      for (const h of turnHistory) emitEventForHistoryEntry(projectRoot, h);
+    } catch (err) {
+      // Event-log write failures must NOT block engine forward progress.
+      // The v1 path (state.history) is still authoritative; events.jsonl is
+      // additive durability. Surface the failure via stderr for diagnostics.
+      process.stderr.write(`[goal-mode] event-log append failed (non-fatal): ${err.message}\n`);
+    }
 
     saveTree(projectRoot, newTree);
     saveState(projectRoot, newState);
@@ -222,6 +326,24 @@ export async function runStopHook({ stdin, projectRoot }) {
     }
     if (templateName === 'continuation-review.md') {
       ctx.audit_instructions = render(readPrompt('audit-instructions.md', PLUGIN_ROOT), ctx);
+      // Surface rejected verdicts from this review cycle so the agent SEES
+      // that a previous verdict was discarded for missing Agent dispatch.
+      // Without this, agent re-emits the same fabricated GO and the cursor
+      // never advances (the "invisible rejection → infinite loop" bug from
+      // v1.2.0 critique A4).
+      const lastCursorAdvanceTs = [...newState.history]
+        .reverse()
+        .find((e) => e.event === 'cursor-advanced' && e.node_id === cursor.id)?.ts
+        ?? newState.started_at;
+      ctx.rejected_verdicts = newState.history
+        .filter(
+          (h) => h.event === 'review-verdict'
+            && h.node_id === cursor.id
+            && h.payload?.rejected === true
+            && (!lastCursorAdvanceTs || h.ts >= lastCursorAdvanceTs),
+        )
+        .map((h) => ({ agent: h.payload.agent, status: h.payload.status, reason: h.payload.reason ?? 'unknown' }));
+      ctx.has_rejected_verdicts = ctx.rejected_verdicts.length > 0;
     }
     if (templateName === 'continuation-blocked.md') {
       const uncovered = ctx.criteria.filter(c => c.covered_marker === ' ');
@@ -243,8 +365,52 @@ export async function runStopHook({ stdin, projectRoot }) {
       },
     };
   } catch (err) {
-    console.error(`[goal-mode] runStopHook caught error: ${err.message}`, err.stack);
-    return { exit: 0, stdout: null, error: String(err) };
+    // Visibility-first error handling. The previous "swallow + return null"
+    // behavior caused the conversation to silently stall whenever any internal
+    // step threw (zod schema validation, template render, applyMutations,
+    // saveState/saveTree, transcript parse). The user just saw "engine
+    // встал" with no diagnostic in the conversation flow — stderr in Desktop
+    // hooks is not visible in the chat UI.
+    //
+    // SOTA contract: an internal error MUST surface as a block-decision
+    // continuation prompt so the assistant sees it on the next turn and can
+    // react (e.g., revert a bad state.json edit, fix a malformed tag, file
+    // a bug). The error message + stack are included so the assistant has
+    // enough context to recover without an opaque "пощупай в потёмках" loop.
+    const errMsg = String(err?.message ?? err);
+    const errStack = err?.stack ? `\n\nStack:\n${err.stack}` : '';
+    console.error(`[goal-mode] runStopHook caught error: ${errMsg}`, err?.stack);
+    const reason = [
+      '⚠️ goal-mode engine error',
+      '',
+      'The Stop-hook engine caught an internal error while processing this turn.',
+      'No state mutations were saved (or only partial — check .claude/goals/active/state.json).',
+      '',
+      `Error: ${errMsg}`,
+      errStack,
+      '',
+      'Recovery hints:',
+      '- If you recently hand-edited state.json or tree.json, the edit may have',
+      '  violated the zod schema (e.g., unknown event in history.event, missing',
+      '  required field). Run `jq . .claude/goals/active/state.json` to validate JSON,',
+      '  then compare against engine/state.mjs schema definitions.',
+      '- If a template render failed, the template variable may be undefined —',
+      '  check prompts/ directory for the failing variable name.',
+      '- If applyMutations failed, the last assistant tags may have malformed',
+      '  attribute values — inspect the last assistant message for tag syntax.',
+      '',
+      'Report this with the error + stack if reproducible. Do NOT re-attempt',
+      'the same operation blindly — fix the root cause first.',
+    ].join('\n');
+    return {
+      exit: 0,
+      stdout: {
+        decision: 'block',
+        reason,
+        systemMessage: `⚠️ goal-mode engine error: ${errMsg.slice(0, 100)}`,
+      },
+      error: errMsg,
+    };
   }
 }
 
@@ -301,4 +467,57 @@ function appendNotesDigest(projectRoot, state, cursor, ts) {
   const lifecycleInfo = state.lifecycle === 'pursuing' ? '' : ` lifecycle=${state.lifecycle}`;
   const line = `- ${ts} iter ${state.budget.iterations.used}: ${cursorInfo}${lifecycleInfo}\n`;
   fs.appendFileSync(notesPath(projectRoot), line);
+}
+
+/**
+ * Map a state.history entry to an event-log entry kind and append it.
+ * The mapping is intentionally narrow: history events that have a structural
+ * meaning (state changed) become event-log entries; informational history
+ * entries do not. Replay (state-from-events) uses these to reconstruct state.
+ */
+function emitEventForHistoryEntry(projectRoot, h) {
+  const HISTORY_TO_EVENT_KIND = {
+    'evidence-added': 'evidence-recorded',
+    'cursor-advanced': 'cursor-advanced',
+    'node-blocked': 'blocker-set',
+    'review-requested': 'review-requested',
+    'session-rebound': 'session-rebound',
+    'achieved': 'lifecycle-changed',
+    'unmet': 'lifecycle-changed',
+    'budget-warning': 'budget-tick',
+    'budget-exhausted': 'budget-tick',
+  };
+  if (h.event === 'review-verdict') {
+    // Split-kind based on rejected flag in payload.
+    appendEvent(projectRoot, {
+      ts: h.ts,
+      iteration: h.iteration,
+      kind: h.payload?.rejected ? 'review-verdict-rejected' : 'review-verdict-accepted',
+      payload: { ...h.payload, node_id: h.node_id },
+      derived_from_tag: 'audit-verdict',
+    });
+    return;
+  }
+  const mappedKind = HISTORY_TO_EVENT_KIND[h.event];
+  if (!mappedKind) return; // not a state-mutating event we care about
+  const enrichedPayload = { ...h.payload, node_id: h.node_id };
+  if (h.event === 'achieved' || h.event === 'unmet') enrichedPayload.to = h.event;
+  appendEvent(projectRoot, {
+    ts: h.ts,
+    iteration: h.iteration,
+    kind: mappedKind,
+    payload: enrichedPayload,
+    derived_from_tag: deriveTagOrigin(h.event),
+  });
+}
+
+function deriveTagOrigin(historyEvent) {
+  switch (historyEvent) {
+    case 'evidence-added': return 'evidence';
+    case 'cursor-advanced': return null;
+    case 'node-blocked': return 'task-status';
+    case 'review-requested': return 'review-request';
+    case 'session-rebound': return null;
+    default: return null;
+  }
 }

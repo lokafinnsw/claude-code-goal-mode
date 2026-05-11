@@ -6,7 +6,7 @@ import path from 'node:path';
 import { saveState, saveTree } from '../engine/state.mjs';
 
 const sampleTree = () => ({
-  schema_version: 1, goal_id: 'g', mission: 'm',
+  schema_version: 2, goal_id: 'g', mission: 'm',
   created_at: '2026-05-09T00:00:00.000Z',
   approved_at: '2026-05-09T00:00:00.000Z',
   root: {
@@ -19,7 +19,7 @@ const sampleTree = () => ({
 });
 
 const pursuingState = (cursor = 't') => ({
-  schema_version: 1, goal_id: 'g', lifecycle: 'pursuing', cursor,
+  schema_version: 2, goal_id: 'g', lifecycle: 'pursuing', cursor,
   budget: {
     iterations: { used: 5, max: 100 },
     tokens: { used: 0, max: 1_000_000 },
@@ -85,11 +85,43 @@ describe('resumeGoal', () => {
     expect(last.event).toBe('resumed');
   });
 
-  it('refuses if not paused', () => {
+  it('returns distinct message when goal is already pursuing (no resume needed)', () => {
     const root = setup(sampleTree(), pursuingState());
     const result = resumeGoal(root);
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/cannot resume/i);
+    expect(result.error).toMatch(/already running/i);
+    expect(result.error).toContain('Stop hook');
+  });
+
+  it('returns distinct message when no goal exists in project', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-empty-'));
+    const result = resumeGoal(root);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/no active goal/i);
+    expect(result.error).toContain('/goal-mode:goal-plan');
+  });
+
+  it('returns distinct message when goal is achieved (terminal)', () => {
+    const state = pursuingState();
+    state.lifecycle = 'achieved';
+    state.ended_at = new Date().toISOString();
+    const root = setup(sampleTree(), state);
+    const result = resumeGoal(root);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/already achieved/i);
+    expect(result.error).toContain('goal-clear');
+  });
+
+  it('returns distinct message when goal is unmet (terminal)', () => {
+    const state = pursuingState();
+    state.lifecycle = 'unmet';
+    state.ended_at = new Date().toISOString();
+    state.ended_reason = '3x block escalation';
+    const root = setup(sampleTree(), state);
+    const result = resumeGoal(root);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/terminal/i);
+    expect(result.error).toContain('unmet');
   });
 
   it('refuses if iteration budget is exhausted', () => {

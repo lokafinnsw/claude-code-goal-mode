@@ -63,9 +63,32 @@ export function pauseGoal(projectRoot) {
  */
 export function resumeGoal(projectRoot) {
   const state = loadState(projectRoot);
-  if (!state) return { ok: false, error: 'No active goal.' };
+  if (!state) {
+    return {
+      ok: false,
+      error: 'No active goal in this project. To start one: /goal-mode:goal-plan-from-file <path> or /goal-mode:goal-plan "<mission>", then /goal-mode:goal-approve-plan and /goal-mode:goal-start.',
+    };
+  }
+  if (state.lifecycle === 'pursuing') {
+    return {
+      ok: false,
+      error: `Goal is already running (lifecycle=pursuing, cursor=${state.cursor}). No resume needed — just send any message and the Stop hook will drive the next iteration. Use /goal-mode:goal-pause to pause it first if you wanted to resume from a stop.`,
+    };
+  }
+  if (state.lifecycle === 'achieved') {
+    return {
+      ok: false,
+      error: `Goal is already achieved. To start a new goal in this project: /goal-mode:goal-clear --archive, then /goal-mode:goal-plan.`,
+    };
+  }
+  if (state.lifecycle === 'unmet' || state.lifecycle === 'budget-limited') {
+    return {
+      ok: false,
+      error: `Goal is in terminal lifecycle=${state.lifecycle} (${state.ended_reason ?? 'no reason recorded'}). To start fresh: /goal-mode:goal-clear --archive then /goal-mode:goal-plan.`,
+    };
+  }
   if (state.lifecycle !== 'paused') {
-    return { ok: false, error: `cannot resume from lifecycle=${state.lifecycle}` };
+    return { ok: false, error: `Cannot resume from lifecycle=${state.lifecycle}; expected 'paused'.` };
   }
   // Refuse if any budget is exhausted (max=0 means "infinite", never exhausted).
   const iterDone = state.budget.iterations.max > 0

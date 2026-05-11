@@ -11,3 +11,6 @@ node_modules/*
 
 # Internal development tracker — never push to public repo
 HANDOVER.md
+
+# Local goal-mode state from dogfooding the plugin on its own repo
+.claude/

@@ -178,7 +178,40 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
     history.push({ ts, iteration: state.budget.iterations.used, event: 'review-requested', node_id: cursorNode.id, payload: { agents: reviewReq.agents } });
   }
 
-  const verdicts = tags.filter(t => t.kind === 'audit-verdict');
+  const verdictsRaw = tags.filter(t => t.kind === 'audit-verdict');
+
+  // Reviewer-independence enforcement: when opts.scannedAgents is provided
+  // (a Set<string> of subagent_types that the assistant actually dispatched
+  // via the Agent tool in this turn's transcript), reject any verdict whose
+  // agent doesn't appear in the set. Rejected verdicts produce a history
+  // entry with payload.rejected=true and are excluded from the allGo / anyNo
+  // tally — i.e., they do not advance or block the cursor. When the option
+  // is undefined, all verdicts pass through unchanged (backward compat).
+  const verdicts = [];
+  if (opts.scannedAgents !== undefined && verdictsRaw.length > 0 && cursorNode.status === 'review-pending') {
+    for (const v of verdictsRaw) {
+      if (!opts.scannedAgents.has(v.agent)) {
+        history.push({
+          ts,
+          iteration: state.budget.iterations.used,
+          event: 'review-verdict',
+          node_id: cursorNode.id,
+          payload: {
+            agent: v.agent,
+            status: v.status,
+            text: v.text,
+            rejected: true,
+            reason: 'no Agent dispatch detected — reviewer-independence violation',
+          },
+        });
+        continue;
+      }
+      verdicts.push(v);
+    }
+  } else {
+    verdicts.push(...verdictsRaw);
+  }
+
   if (verdicts.length > 0 && cursorNode.status === 'review-pending') {
     // Hoist mkdirSync out of the per-verdict loop: directory creation is
     // idempotent but unnecessary work to repeat for every verdict in a batch.

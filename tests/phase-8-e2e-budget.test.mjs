@@ -7,7 +7,7 @@ import { runStopHook } from '../engine/stop-hook.mjs';
 
 function makeApprovedTree() {
   return {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'phase-8-e2e',
     mission: 'Multi-turn flow to test budget accumulation.',
     created_at: new Date().toISOString(),
@@ -41,7 +41,7 @@ function makeApprovedTree() {
 
 function pursuingState(opts = {}) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'phase-8-e2e',
     lifecycle: 'pursuing',
     cursor: 's.t1',

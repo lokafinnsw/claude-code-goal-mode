@@ -6,7 +6,7 @@ import { applyMutations } from '../engine/apply-mutations.mjs';
 import { nextPendingTaskAfter } from '../engine/traversal.mjs';
 
 const mkTree = (taskId = 't', criteria = ['c0', 'c1'], status = 'pursuing') => ({
-  schema_version: 1,
+  schema_version: 2,
   goal_id: 'g',
   mission: 'm',
   created_at: '2026-05-09T00:00:00.000Z',
@@ -21,7 +21,7 @@ const mkTree = (taskId = 't', criteria = ['c0', 'c1'], status = 'pursuing') => (
 });
 
 const mkState = (cursor = 't') => ({
-  schema_version: 1,
+  schema_version: 2,
   goal_id: 'g',
   lifecycle: 'pursuing',
   cursor,
@@ -48,7 +48,7 @@ describe('applyMutations evidence', () => {
 describe('applyMutations achieved → advance', () => {
   function twoTaskTree() {
     return {
-      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      schema_version: 2, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
       root: {
         id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
         review: [], validate: null, work_front: null, status: 'pursuing',
@@ -90,7 +90,7 @@ describe('applyMutations achieved → advance', () => {
 describe('applyMutations review flow', () => {
   function twoTaskTree() {
     return {
-      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      schema_version: 2, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
       root: {
         id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
         review: [], validate: null, work_front: null, status: 'pursuing',
@@ -167,7 +167,7 @@ describe('applyMutations review flow', () => {
 describe('applyMutations terminal lifecycle', () => {
   function twoTaskTree() {
     return {
-      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      schema_version: 2, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
       root: {
         id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
         review: [], validate: null, work_front: null, status: 'pursuing',
@@ -214,14 +214,14 @@ describe('applyMutations terminal lifecycle', () => {
 describe('applyMutations hardening fix-ups', () => {
   function singleTaskTree(criteria = ['c0']) {
     return {
-      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      schema_version: 2, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
       root: { id: 't', type: 'task', title: 't', goal: 'g', acceptance_criteria: criteria, review: [], validate: null, work_front: null, status: 'pursuing', evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [] },
     };
   }
 
   function reviewTaskTree(reviewers = ['art-x', 'design-y']) {
     return {
-      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      schema_version: 2, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
       root: {
         id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
         review: [], validate: null, work_front: null, status: 'pursuing',
@@ -394,7 +394,7 @@ describe('applyMutations hardening fix-ups', () => {
 describe('applyMutations audit persistence', () => {
   function twoTaskTree() {
     return {
-      schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+      schema_version: 2, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
       root: {
         id: 's', type: 'sprint', title: 's', goal: 'g', acceptance_criteria: [],
         review: [], validate: null, work_front: null, status: 'pursuing',

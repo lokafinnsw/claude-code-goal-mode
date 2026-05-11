@@ -68,3 +68,57 @@ export function readLastAssistantText(transcriptPath) {
   }
   return last;
 }
+
+/**
+ * scanAgentInvocations(transcriptPath, sinceTs)
+ *
+ * Stream the transcript JSONL and return a Set of `subagent_type` strings
+ * for every `Agent` tool_use block seen with timestamp ≥ sinceTs.
+ *
+ * Used by apply-mutations.mjs to enforce reviewer-independence: a verdict
+ * for agent X is only accepted when the transcript shows a real
+ * `Agent(subagent_type="X")` invocation in the relevant window.
+ *
+ * Time-based windowing: transcript lines may carry a `timestamp` field at
+ * top level (CC writes ISO 8601). If absent, we keep the entry (fail-open
+ * for safety — a missing timestamp shouldn't silently reject a real call).
+ * Caller picks `sinceTs` from state.history (last cursor-advanced event for
+ * the current cursor).
+ *
+ * Never throws; missing file → empty Set.
+ */
+export function scanAgentInvocations(transcriptPath, sinceTs = null) {
+  let text;
+  try {
+    text = fs.readFileSync(transcriptPath, 'utf8');
+  } catch {
+    return new Set();
+  }
+  const since = sinceTs ? new Date(sinceTs).getTime() : -Infinity;
+  const found = new Set();
+  for (const line of text.split('\n').filter(Boolean)) {
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (obj?.timestamp) {
+      const t = new Date(obj.timestamp).getTime();
+      if (Number.isFinite(t) && t < since) continue;
+    }
+    const blocks = obj?.message?.content;
+    if (!Array.isArray(blocks)) continue;
+    for (const b of blocks) {
+      if (b?.type !== 'tool_use') continue;
+      // Two CC conventions: tool name may be "Agent" with input.subagent_type
+      // (Claude Code SDK pattern), or a fully-qualified name. We accept both.
+      const name = b.name ?? b.tool_name ?? '';
+      if (name === 'Agent' || name === 'agent') {
+        const t = b.input?.subagent_type ?? b.input?.subagentType;
+        if (typeof t === 'string' && t.length > 0) found.add(t);
+      }
+    }
+  }
+  return found;
+}

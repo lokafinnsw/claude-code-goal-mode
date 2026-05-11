@@ -6,7 +6,7 @@ import path from 'node:path';
 import { saveTree, saveState, loadState, loadTree } from '../engine/state.mjs';
 
 const sampleTree = (review = ['art-x']) => ({
-  schema_version: 1,
+  schema_version: 2,
   goal_id: 'g',
   mission: 'm',
   created_at: '2026-05-09T00:00:00.000Z',
@@ -38,7 +38,7 @@ const sampleTree = (review = ['art-x']) => ({
 });
 
 const sampleState = (cursor = 's.t1') => ({
-  schema_version: 1,
+  schema_version: 2,
   goal_id: 'g',
   lifecycle: 'pursuing',
   cursor,

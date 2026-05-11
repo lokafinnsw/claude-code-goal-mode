@@ -15,7 +15,7 @@ function setupProject(tree, state, transcriptText) {
 }
 
 const minimalTree = () => ({
-  schema_version: 1, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
+  schema_version: 2, goal_id: 'g', mission: 'm', created_at: '2026-05-09T00:00:00.000Z', approved_at: null,
   root: {
     id: 't', type: 'task', title: 'T', goal: 'g', acceptance_criteria: ['c0'], review: [], validate: null, work_front: null, status: 'pursuing',
     evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [],
@@ -23,7 +23,7 @@ const minimalTree = () => ({
 });
 
 const pursuingState = (sessionId = 'sess-1') => ({
-  schema_version: 1, goal_id: 'g', lifecycle: 'pursuing', cursor: 't',
+  schema_version: 2, goal_id: 'g', lifecycle: 'pursuing', cursor: 't',
   budget: { iterations: { used: 0, max: 100 }, tokens: { used: 0, max: 1_000_000 }, wallclock: { started_at: new Date().toISOString(), max_seconds: 14400 } },
   session_id: sessionId,
   started_at: new Date().toISOString(), paused_at: null, ended_at: null, ended_reason: null, history: [],
@@ -41,11 +41,19 @@ describe('runStopHook integration', () => {
     expect(result.stdout.systemMessage).toMatch(/🎯/);
   });
 
-  it('exits 0 with no output when session_id mismatches', async () => {
+  it('auto-rebinds state.session_id and processes the Stop event when session_id mismatches (pursuing)', async () => {
     const { root, tPath } = setupProject(minimalTree(), pursuingState('sess-1'), '');
-    const result = await runStopHook({ stdin: { session_id: 'sess-other', transcript_path: tPath }, projectRoot: root });
-    expect(result.exit).toBe(0);
-    expect(result.stdout).toBeNull();
+    // Silence stderr rebind diagnostic in this test.
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = () => true;
+    try {
+      const result = await runStopHook({ stdin: { session_id: 'sess-other', transcript_path: tPath }, projectRoot: root });
+      expect(result.exit).toBe(0);
+      // Auto-rebind: pursuing path runs, continuation emitted, state.session_id updated.
+      expect(result.stdout?.decision).toBe('block');
+    } finally {
+      process.stderr.write = origWrite;
+    }
   });
 
   it('exits 0 when no goal active (state file missing)', async () => {

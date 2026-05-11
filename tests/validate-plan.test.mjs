@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { validatePlan } from '../engine/validate-plan.mjs';
 
 const okTree = () => ({
-  schema_version: 1,
+  schema_version: 2,
   goal_id: 'g',
   mission: 'm',
   created_at: '2026-05-09T00:00:00.000Z',
@@ -149,7 +149,7 @@ import { saveState, saveTree, loadState, loadTree } from '../engine/state.mjs';
 describe('approvePlan lifecycle gate (C-1)', () => {
   function minimalState(goalId) {
     return {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: goalId,
       lifecycle: 'draft',
       cursor: 'pending',

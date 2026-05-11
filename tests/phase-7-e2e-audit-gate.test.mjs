@@ -9,7 +9,7 @@ import { manualApprove } from '../engine/manual-approve.mjs';
 function setupReviewableProject() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase7-e2e-'));
   const tree = {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'phase7-e2e',
     mission: 'Two-task with review[].',
     created_at: new Date().toISOString(),
@@ -41,7 +41,7 @@ function setupReviewableProject() {
   };
   saveTree(root, tree);
   const state = {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'phase7-e2e',
     lifecycle: 'pursuing',
     cursor: 's.t1',
@@ -59,11 +59,30 @@ function setupReviewableProject() {
   return root;
 }
 
-function writeTranscript(root, agentText) {
+function writeTranscript(root, agentText, dispatchedAgents = []) {
   const tPath = path.join(root, 'transcript.jsonl');
-  fs.writeFileSync(tPath, JSON.stringify({
+  // Model real-world transcripts: when the assistant claims an audit-verdict
+  // for agent X, the transcript MUST also contain an Agent(subagent_type=X)
+  // tool_use block. v1.2.0 reviewer-independence enforcement rejects verdicts
+  // without a matching dispatch. Tests pass `dispatchedAgents` whenever the
+  // text body includes a verdict; the helper emits a matching tool_use row.
+  const rows = [];
+  for (const agent of dispatchedAgents) {
+    rows.push({
+      timestamp: new Date().toISOString(),
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', name: 'Agent', id: `agent-${agent}-${Date.now()}`, input: { subagent_type: agent, description: 'review', prompt: 'check' } },
+        ],
+      },
+    });
+  }
+  rows.push({
+    timestamp: new Date().toISOString(),
     message: { role: 'assistant', content: [{ type: 'text', text: agentText }] },
-  }) + '\n');
+  });
+  fs.writeFileSync(tPath, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   return tPath;
 }
 
@@ -85,9 +104,10 @@ describe('Phase 7 E2E — audit gate', () => {
     const auditDir = path.join(root, '.claude/goals/active/audits');
     expect(fs.existsSync(auditDir) && fs.readdirSync(auditDir).length > 0).toBe(false);
 
-    // Turn 2: agent emits GO verdict.
+    // Turn 2: agent emits GO verdict (with matching Agent dispatch for indep enforcement).
     tPath = writeTranscript(root,
-      '<audit-verdict agent="art-x" status="GO">looks good</audit-verdict>');
+      '<audit-verdict agent="art-x" status="GO">looks good</audit-verdict>',
+      ['art-x']);
     result = await runStopHook({
       stdin: { session_id: sessionId, transcript_path: tPath },
       projectRoot: root,
@@ -117,9 +137,10 @@ describe('Phase 7 E2E — audit gate', () => {
       projectRoot: root,
     });
 
-    // Turn 2: NOGO verdict.
+    // Turn 2: NOGO verdict (with matching Agent dispatch).
     tPath = writeTranscript(root,
-      '<audit-verdict agent="art-x" status="NOGO">contrast fails</audit-verdict>');
+      '<audit-verdict agent="art-x" status="NOGO">contrast fails</audit-verdict>',
+      ['art-x']);
     await runStopHook({
       stdin: { session_id: sessionId, transcript_path: tPath },
       projectRoot: root,
@@ -192,9 +213,10 @@ describe('Phase 7 E2E — audit gate', () => {
       projectRoot: root,
     });
 
-    // Turn 2: agent emits NOGO.
+    // Turn 2: agent emits NOGO (with matching Agent dispatch).
     tPath = writeTranscript(root,
-      '<audit-verdict agent="art-x" status="NOGO">contrast fails</audit-verdict>');
+      '<audit-verdict agent="art-x" status="NOGO">contrast fails</audit-verdict>',
+      ['art-x']);
     await runStopHook({
       stdin: { session_id: sessionId, transcript_path: tPath },
       projectRoot: root,

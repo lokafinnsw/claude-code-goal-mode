@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "goal_id": "migration-pydantic-v1-v2",
   "mission": "Migrate codebase from pydantic v1 to v2 with green test suite",
   "created_at": "2026-05-10T00:00:00.000Z",
@@ -44,7 +44,10 @@
               "grep -rn '\\.json(' src/ returns zero matches against pydantic models",
               "All call sites previously using .dict() now use .model_dump() and round-trip with model_validate(model.model_dump())"
             ],
-            "review": ["python-reviewer", "migration-reviewer"],
+            "review": [
+              "python-reviewer",
+              "migration-reviewer"
+            ],
             "validate": "pytest tests/",
             "work_front": "models",
             "status": "pending",
@@ -64,7 +67,9 @@
               "grep -rn 'const=' src/ returns zero matches inside Field(...) calls",
               "pytest -W error::DeprecationWarning tests/ exits 0"
             ],
-            "review": ["python-reviewer"],
+            "review": [
+              "python-reviewer"
+            ],
             "validate": "pytest tests/",
             "work_front": "models",
             "status": "pending",
@@ -84,7 +89,10 @@
               "Every model that previously had a Config block has a model_config = ConfigDict(...) assignment with the same options carried over (orm_mode -> from_attributes, allow_population_by_field_name -> populate_by_name, etc.)",
               "pytest tests/ exits 0 with no schema-shape regressions"
             ],
-            "review": ["python-reviewer", "migration-reviewer"],
+            "review": [
+              "python-reviewer",
+              "migration-reviewer"
+            ],
             "validate": "pytest tests/",
             "work_front": "models",
             "status": "pending",
@@ -121,7 +129,9 @@
               "Every previously-validated field still has an equivalent @field_validator covering it (verified by the existing validator test cases passing untouched)",
               "pytest tests/ exits 0 with the same number of validator-related test cases passing as before the migration"
             ],
-            "review": ["python-reviewer"],
+            "review": [
+              "python-reviewer"
+            ],
             "validate": "pytest tests/",
             "work_front": "validators",
             "status": "pending",
@@ -141,7 +151,10 @@
               "Each converted validator returns self (for mode='after') or the values dict (for mode='before') per the v2 contract",
               "pytest tests/ exits 0 and the cross-field invariant tests still fail when invariants are violated (negative-path coverage preserved)"
             ],
-            "review": ["python-reviewer", "migration-reviewer"],
+            "review": [
+              "python-reviewer",
+              "migration-reviewer"
+            ],
             "validate": "pytest tests/",
             "work_front": "validators",
             "status": "pending",

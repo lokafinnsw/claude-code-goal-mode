@@ -62,6 +62,11 @@ After this turn, the engine will not invoke you again for this goal until \`/goa
 exports[`continuation.md snapshot render > renders against a representative state 1`] = `
 "# 🎯 Goal continuation — iteration 7/100
 
+## Progress
+\`\`\`
+
+\`\`\`
+
 ## Position in plan
 - **Sprint:** Sprint 1: Auth
 - **Epic:** Epic 1.1: Token refresh
@@ -82,23 +87,45 @@ Rotate refresh token on every use.
 ## What to do this turn
 1. **Study the actual code/docs** related to this task. Do not paraphrase git log.
 2. Make a concrete change OR collect verifying evidence.
-3. Use these structured tags as you progress:
-   - \`<evidence file="path" line="N" criterion="i" note="why this proves criterion i" />\` — one per criterion you cover.
-   - \`<evidence command="cmd" exit_code="0" criterion="i" note="..." />\` — when verification is by shell command.
-   - \`<task-status>pursuing|achieved|blocked</task-status>\` — your own assessment.
+3. **Two-layer output convention** — write a human-readable summary FIRST, then put machine tags inside a \`<details>\` block at the end of your turn. The Stop-hook engine parses tags regardless of surrounding markdown, so they work the same; the human reading the conversation sees a clean summary instead of a wall of XML attributes.
 
-   - When you believe the task is achieved, you must request review: \`<review-request agents="aaa-art-director,rpg-game-designer"/>\`. The cursor will not advance until every reviewer returns GO.
+   Recommended shape for an "achieved" turn:
 
+   \`\`\`
+   **Implement RT-rotation** ✅
 
-   - Run \`npm test -- src/auth\` and attach exit code as \`<evidence command="npm test -- src/auth" exit_code="N" criterion="i" note="..." />\`.
+   - **AC#0** — short plain-language summary of how you verified it (1 line)
+   - **AC#1** — same
+   - **Validation** — \`npm test -- src/auth\` exit 0
+   
+   <details>
+   <summary>engine evidence (machine-parsed)</summary>
+
+   <evidence file="path" line="N" criterion="0" note="..." />
+   <evidence file="path" line="N" criterion="1" note="..." />
+   <task-status>achieved</task-status>
+   <review-request agents="aaa-art-director,rpg-game-designer"/>
+   </details>
+   \`\`\`
+
+   Bullets above the \`<details>\` are what the user reads. Tags inside \`<details>\` are what the engine consumes — never skip them or wrap them in fenced code blocks (\\\`\\\`\\\`), the parser strips fenced regions before tag extraction.
 
 4. **Do not accept proxy signals** as completion. "Tests passed" ≠ "criterion i is met". Map each criterion to specific evidence.
 5. If the task is unsolvable in this scope: \`<task-status>blocked</task-status>\` plus \`<blocker>reason</blocker>\`. Do not silently skip.
 
+## Tag reference (full schema)
+- \`<evidence file="path" line="N" criterion="i" note="..." />\` — file-based proof for criterion \`i\`.
+- \`<evidence command="cmd" exit_code="0" criterion="i" note="..." />\` — shell-command proof.
+- \`<task-status>pursuing|achieved|blocked</task-status>\` — assessment.
+- \`<review-request agents="aaa-art-director,rpg-game-designer"/>\` — required when claiming achieved; cursor will not advance until every reviewer returns GO.
+- \`<evidence command="npm test -- src/auth" exit_code="N" criterion="i" note="..." />\` — wraps the validate hook into evidence.
+- \`<blocker>reason</blocker>\` — pair with \`<task-status>blocked</task-status>\` for unsolvable scope.
+
 ## Anti-patterns (do not)
 - Do not edit \`.claude/goals/active/tree.json\` or \`state.json\` directly. Emit tags; the engine will mutate state.
 - Do not declare \`<task-status>achieved</task-status>\` without \`<evidence criterion="i" .../>\` for **every** criterion.
-- Do not output a \`<promise>\` tag or any other escape phrase. The engine ignores them.
+- Do not wrap tags in fenced code blocks (\\\`\\\`\\\`) — \`stripCodeRegions\` removes them before parsing, so the engine won't see them.
+- Do not stuff multi-paragraph essays into the \`note=\` attribute. Keep notes ≤ 200 chars; put the long-form rationale in the human bullet ABOVE the \`<details>\` block.
 
 ## Budget remaining
 - Iterations: 7/100
@@ -109,6 +136,11 @@ Rotate refresh token on every use.
 
 exports[`continuation-blocked.md snapshot > renders with verdicts and uncovered criteria 1`] = `
 "# ⛔ Goal continuation — task is blocked (attempt 2/3)
+
+## Progress
+\`\`\`
+
+\`\`\`
 
 The task **Implement RT-rotation** (id: \`s1.e1.t1\`) is currently blocked.
 
@@ -132,11 +164,39 @@ The task **Implement RT-rotation** (id: \`s1.e1.t1\`) is currently blocked.
    - Or, if you believe the task as-stated is impossible, emit \`<task-status>blocked</task-status>\` with a fresh \`<blocker>reason</blocker>\`. After 3 consecutive blocks the goal escalates to \`unmet\`.
 
 3. Do not declare \`achieved\` without addressing the verdicts/criteria — the engine will reject it.
+
+## Output format
+
+Same two-layer convention as \`continuation.md\`: write a human-readable summary FIRST (what changed, why it now covers the previously-uncovered criteria), then put machine tags inside a \`<details>\` block at the end:
+
+\`\`\`
+**Retry — Implement RT-rotation**
+
+What I changed:
+- <bullet 1>
+- <bullet 2>
+
+How it now covers the criteria:
+- **AC#i** — short summary
+
+<details>
+<summary>engine evidence (machine-parsed)</summary>
+
+<evidence file="..." line="N" criterion="i" note="..." />
+<task-status>achieved</task-status>
+</details>
+\`\`\`
 "
 `;
 
 exports[`continuation-review.md snapshot > renders with reviewer list and audit body 1`] = `
 "# 🔵 Goal continuation — review-pending
+
+## Progress
+\`\`\`
+
+\`\`\`
+
 
 The task **Implement RT-rotation** (id: \`s1.e1.t1\`) declared itself achieved. Before the cursor advances, you must collect independent verdicts from every reviewer in this list:
 
@@ -160,11 +220,22 @@ The audit instruction body to pass into each Agent call is below — use it verb
 (audit body placeholder for snapshot)
 ---
 
-After all Agent calls return, emit one tag per reviewer:
+After all Agent calls return, write a human-readable summary FIRST, then put the machine verdict tags inside a \`<details>\` block at the end:
 
 \`\`\`
-<audit-verdict agent="<reviewer>" status="GO|NOGO|REVISE">verdict text</audit-verdict>
+**Review verdicts for Implement RT-rotation**
+
+- **<reviewer-1>** — GO: short reason (or NOGO/REVISE: short reason)
+- **<reviewer-2>** — GO: short reason
+<details>
+<summary>engine verdicts (machine-parsed)</summary>
+
+<audit-verdict agent="<reviewer-1>" status="GO">full verdict text from agent</audit-verdict>
+<audit-verdict agent="<reviewer-2>" status="GO">full verdict text from agent</audit-verdict>
+</details>
 \`\`\`
+
+The bullets above are what the user reads; tags inside \`<details>\` are what the engine consumes. Do NOT wrap tags in fenced code blocks (\\\`\\\`\\\`) — \`stripCodeRegions\` removes them before parsing.
 
 ## Rules
 

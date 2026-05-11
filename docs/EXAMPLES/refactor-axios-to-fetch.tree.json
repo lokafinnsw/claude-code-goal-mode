@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "goal_id": "refactor-axios-to-fetch",
   "mission": "Refactor HTTP client from axios to native fetch with green test suite",
   "created_at": "2026-05-10T00:00:00.000Z",
@@ -44,7 +44,9 @@
               "npm ci exits 0 and package-lock.json contains no axios entry (verified by grep -c '\"axios\"' package-lock.json returning 0)",
               "grep -rn \"from 'axios'\" src/ and grep -rn \"require('axios')\" src/ both return zero matches"
             ],
-            "review": ["js-reviewer"],
+            "review": [
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "infra",
             "status": "pending",
@@ -64,7 +66,9 @@
               "A timeout test hitting a slow endpoint with timeoutMs=10 rejects with a RequestTimeoutError within 50ms",
               "The helper sets Content-Type: application/json automatically when body is a non-string object, mirroring the prior axios behavior"
             ],
-            "review": ["js-reviewer"],
+            "review": [
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "infra",
             "status": "pending",
@@ -84,7 +88,9 @@
               "The helper rejects on non-2xx responses with an HttpError carrying {status, body} matching the prior contract (verified by a 500-response test case)",
               "All previously-passing unit tests for callers of httpRequest pass without modification to their assertions on the parsed response body"
             ],
-            "review": ["js-reviewer"],
+            "review": [
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "infra",
             "status": "pending",
@@ -104,7 +110,9 @@
               "grep -rn 'axios-mock-adapter' tests/ returns zero matches",
               "npm test exits 0 with the full suite green and at least the previously-passing test count"
             ],
-            "review": ["js-reviewer"],
+            "review": [
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "infra",
             "status": "pending",

@@ -4,6 +4,60 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-05-11
+
+Patch release closing the ten honest gaps from the v1.2.0 self-critique: replay completeness, rejected-verdict visibility, retention/rotation, `doctor --fix`, `goal-tree` command, atomic event-first write order.
+
+### Added
+
+- **`goal-started` + `budget-tick` event kinds.** `start-goal` emits `goal-started` carrying full initial config (goal_id, session_id, cursor, started_at, budget). Stop hook emits `budget-tick` every iteration with cumulative `iterations_used` / `tokens_used`. Replay (`state-from-events.mjs`) consumes both — recovered state now has accurate budget counters + session id (v1.2.0 defaulted to 0/synthetic).
+- **`doctor --fix` mode.** Safe auto-fixes: delete `.broken-*` backups; trim `.pre-migration-v*` backups to last 3. CLI re-checks afterwards.
+- **`doctor --json` mode.** Machine-readable report for CI / monitoring.
+- **`/goal-mode:goal-tree` command.** Renders plan as ASCII tree with status glyphs (`✓` achieved, `▶` pursuing, `🔵` review-pending, `⛔` blocked, `·` pending).
+- **`pre-migration-backup-retention` doctor check.** Warns when more than 3 `.pre-migration-v*` backups accumulate.
+- **Rejected verdicts surface in `continuation-review.md`.** When the engine rejects a fabricated verdict (v1.2.0 reviewer-independence enforcement), the agent now sees it in the next continuation prompt with agent name + reason. Closes the "invisible rejection → infinite loop" gap.
+
+### Changed
+
+- **Event-first atomic write order in stop hook.** `events.jsonl` is appended BEFORE `state.json` / `tree.json` saves. A crash between writes leaves events authoritative; recovery replays them.
+- **`semver` dep replaces home-grown compare.** `checkPluginPinCurrent` handles pre-release tags (`1.2.0-rc1` < `1.2.0`) correctly.
+- **Event log + state.history rotation.** When either exceeds 200 entries, older entries move to `.claude/goals/archive/events-<batch>.jsonl` / `history-<batch>.jsonl`.
+- **`start-goal.mjs` writes `schema_version: CURRENT_SCHEMA_VERSION`** instead of hardcoded `1`.
+
+### Fixed
+
+- **`it.skip()` legacy repro test re-enabled** via proper vi.spyOn (admitted v1.2.0 tech debt).
+
+## [1.2.0] — 2026-05-10
+
+Stability & UX SOTA pass — six new product surfaces landed end-to-end against the goal-mode plugin itself driven as a real plan (`tree.json` in `.claude/goals/active/` of this repo).
+
+### Added
+
+- **`/goal-mode:goal-doctor`** — health diagnostic with 9 checks: state/tree validity, schema version, broken backups, cursor resolution, plugin pin freshness, Stop-hook liveness, budget headroom, event-log presence. Each check has a concrete fix command. `engine/doctor.mjs`, `engine/doctor-cli.mjs`, `scripts/doctor.sh`, `commands/goal-doctor.md`.
+- **Schema migrations framework.** `engine/migrations.mjs` + per-step modules in `engine/migrations/`. Auto-applies on `loadState` / `loadTree` / `saveState` / `saveTree` / `validatePlan` when on-disk `schema_version` is older than `CURRENT_SCHEMA_VERSION`. Originals preserved as `.pre-migration-v<old>-<ts>` backups. First migration: v1 → v2 (canonicalising the `session-rebound` history event).
+- **Progress bar in every continuation prompt.** ASCII Sprint / Epic / Task / Overall block with █/░ bars + percentages. `engine/progress.mjs`. Wired into `continuation.md`, `continuation-review.md`, `continuation-blocked.md`.
+- **SessionStart auto-resume hook.** New CC session in a project with an active pursuing goal auto-injects the current continuation prompt — no more typing "продолжай" / "/goal-status" to re-engage. `hooks/session-start-hook.sh`, `engine/session-start-hook.mjs`, `engine/session-start-cli.mjs`. Declared in `hooks/hooks.json` SessionStart array.
+- **Resume command UX rewrite.** Distinct actionable messages per lifecycle (pursuing → "already running, just send any message"; achieved → "/goal-clear --archive then /goal-plan"; missing → starter pointers). `engine/lifecycle-commands.mjs::resumeGoal`.
+- **Reviewer-independence enforcement.** `<audit-verdict agent="X">` is accepted only when the transcript shows a real `Agent(subagent_type="X")` tool_use since the last `cursor-advanced` for the current cursor. Rejected verdicts produce a `review-verdict` history entry with `payload.rejected: true` and do not advance the cursor. `engine/transcript.mjs::scanAgentInvocations`, `engine/apply-mutations.mjs`, `engine/stop-hook.mjs`. Documented in `docs/architecture/reviewer-independence.md`.
+- **Event-log architecture.** Append-only `events.jsonl` dual-written alongside `state.history`. Strict zod schema `EventLogEntrySchema`. Crash recovery via `loadStateWithRecovery` replays events to reconstruct missing state. `engine/event-log.mjs`, `engine/state-from-events.mjs`.
+- **Two-layer output convention** (carried in from v1.1.22). Continuation prompts instruct assistants to write human-readable bullets ABOVE a `<details>` block containing machine tags. `parse-tags` finds tags inside `<details>` (verified with 3 regression tests in `tests/parse-tags.test.mjs`).
+
+### Changed
+
+- **`CURRENT_SCHEMA_VERSION` → 2.** `GoalStateSchema` and `GoalTreeSchema` now `z.literal(2)`. v1 states auto-migrate on load.
+- **`install.sh` now updates `~/.claude/plugins/installed_plugins.json` pin.** Previously deploys to cache succeeded but the loader kept the old pinned version, requiring users to manually `/plugin update` (which doesn't exist in Desktop). Step 6 of install.sh closes this loop.
+- **12 pre-existing adversarial-final tests** updated to match current shipping product (rewrote stale assertions about pre-v1.1.17 install.sh shape, pre-namespace slash command format, etc.).
+
+### Fixed
+
+- **`schema_version`-mismatch silent stall** (the v1.1.18 "engine встал" bug class). The historical pattern was: zod throws on save → outer catch swallows → returns null stdout → CC pauses conversation with no diagnostic. v1.2.0 catch-block emits the error as a continuation-prompt diagnostic (carried in from v1.1.20).
+
+### Tests
+
+- 660 pass · 2 skipped (legacy placeholders, removed in 1.2.1) · 33 test files.
+- New: `tests/doctor.test.mjs` (29), `tests/migrations.test.mjs` (17), `tests/progress.test.mjs` (10), `tests/session-start-hook.test.mjs` (6), `tests/independence.test.mjs` (11), `tests/event-log.test.mjs` (16).
+
 ## [1.1.18] — 2026-05-10
 
 Replaces v1.1.15's wildcard session_id workaround with a proper transcript-derived real session UUID. Maintains strict session-id matching in stop-hook so multi-session isolation works in both Desktop and CLI without any escape hatch. Source: a second-machine agent on the same project independently identified the same blocker, traced it via instrumented hook to the JSONL transcript directory, and proposed this fix verbatim.

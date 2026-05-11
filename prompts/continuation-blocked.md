@@ -1,5 +1,10 @@
 # ⛔ Goal continuation — task is blocked (attempt {{review_attempts}}/3)
 
+## Progress
+```
+{{progress_block}}
+```
+
 The task **{{task_title}}** (id: `{{task_id}}`) is currently blocked.
 
 **Last blocker reason:** {{blocker_reason}}
@@ -21,3 +26,25 @@ The task **{{task_title}}** (id: `{{task_id}}`) is currently blocked.
    - Or, if you believe the task as-stated is impossible, emit `<task-status>blocked</task-status>` with a fresh `<blocker>reason</blocker>`. After 3 consecutive blocks the goal escalates to `unmet`.
 
 3. Do not declare `achieved` without addressing the verdicts/criteria — the engine will reject it.
+
+## Output format
+
+Same two-layer convention as `continuation.md`: write a human-readable summary FIRST (what changed, why it now covers the previously-uncovered criteria), then put machine tags inside a `<details>` block at the end:
+
+```
+**Retry — {{task_title}}**
+
+What I changed:
+- <bullet 1>
+- <bullet 2>
+
+How it now covers the criteria:
+- **AC#i** — short summary
+
+<details>
+<summary>engine evidence (machine-parsed)</summary>
+
+<evidence file="..." line="N" criterion="i" note="..." />
+<task-status>achieved</task-status>
+</details>
+```

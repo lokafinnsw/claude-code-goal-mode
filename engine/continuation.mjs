@@ -68,6 +68,7 @@
 
 import { findNodeById } from './traversal.mjs';
 import { wallclockMinutes } from './wallclock.mjs';
+import { computeProgress } from './progress.mjs';
 
 export class TemplateRenderError extends Error {
   constructor(message, details) {
@@ -278,6 +279,7 @@ export function buildContext(tree, state, cursorId, now = Date.now()) {
   const criteria = task.acceptance_criteria.map((text, index) => ({
     index, text, covered_marker: coveredCriteria.has(index) ? 'x' : ' ',
   }));
+  const progress = computeProgress(tree, cursorId);
   return {
     iteration: state.budget.iterations.used,
     iterations_max: state.budget.iterations.max,
@@ -299,6 +301,8 @@ export function buildContext(tree, state, cursorId, now = Date.now()) {
     tokens_max: state.budget.tokens.max,
     wallclock_minutes: wallclockMinutes(state, now),
     wallclock_max_minutes: Math.floor(state.budget.wallclock.max_seconds / 60),
+    progress_block: progress.block,
+    progress,
   };
 }
 

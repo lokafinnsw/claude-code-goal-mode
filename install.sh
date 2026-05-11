@@ -142,6 +142,33 @@ jq --arg name "$MARKETPLACE_NAME" \
 ' "$SETTINGS" > "$SETTINGS.new" && mv "$SETTINGS.new" "$SETTINGS"
 echo "→ Enabled in settings.json."
 
+# 6. Pin version in installed_plugins.json so the plugin loader picks v$VERSION
+#    on next session restart (Desktop AND CLI). Without this step the loader
+#    keeps the previously-pinned version even if a newer cache dir exists,
+#    which is why earlier install.sh runs visibly deployed but didn't activate.
+INSTALLED="$HOME/.claude/plugins/installed_plugins.json"
+mkdir -p "$(dirname "$INSTALLED")"
+[[ -f "$INSTALLED" ]] || echo '{"version":2,"plugins":{}}' > "$INSTALLED"
+if ! jq -e . "$INSTALLED" >/dev/null 2>&1; then
+  echo "❌ ~/.claude/plugins/installed_plugins.json is not valid JSON. Fix it manually first." >&2
+  exit 1
+fi
+PIN_KEY="${PLUGIN_NAME}@${MARKETPLACE_NAME}"
+jq --arg key "$PIN_KEY" \
+   --arg path "$CACHE_DIR" \
+   --arg ver "$VERSION" \
+   --arg ts "$NOW_ISO" '
+  .plugins = (.plugins // {}) |
+  .plugins[$key] = [{
+    scope: "user",
+    installPath: $path,
+    version: $ver,
+    installedAt: (.plugins[$key][0].installedAt // $ts),
+    lastUpdated: $ts
+  }]
+' "$INSTALLED" > "$INSTALLED.new" && mv "$INSTALLED.new" "$INSTALLED"
+echo "→ Pinned v$VERSION in installed_plugins.json (loader will use this version on next session)."
+
 echo ""
 echo "✅ goal-mode v$VERSION installed (plugin cache path; same end state as /plugin install)."
 echo ""

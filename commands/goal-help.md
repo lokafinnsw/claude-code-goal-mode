@@ -13,6 +13,8 @@ description: "Explain Goal Mode plugin and available commands"
 | `/goal-approve-plan` | Validate the draft and lock it. Lifecycle → approved. |
 | `/goal-start [--max-iter N] [--token-budget N] [--time-budget Nm\|Nh] [--force]` | Begin pursuing. Lifecycle → pursuing. `--force` to overwrite an existing active goal. |
 | `/goal-status` | Show plan tree, cursor, budget, last events. |
+| `/goal-tree` | Render the active plan as an ASCII tree with status glyphs (✓/▶/🔵/⛔/·). |
+| `/goal-doctor [--fix] [--json]` | Diagnose health (state/tree, schema, backups, cursor, plugin pin, Stop-hook liveness, budget, event-log, retention). `--fix` applies safe auto-fixes. `--json` for machine output. |
 | `/goal-pause` | Lifecycle → paused. Stop hook exits cleanly. |
 | `/goal-resume` | Lifecycle → pursuing (refused if budget exhausted). |
 | `/goal-approve [--reason "..."]` | Manually issue GO for current review-pending node. |

@@ -1,6 +1,6 @@
 {
   "name": "claude-code-goal-mode",
-  "version": "1.1.18",
+  "version": "1.2.1",
   "type": "module",
   "private": true,
   "engines": {
@@ -12,6 +12,7 @@
     "lint:sh": "bash -c 'shopt -s nullglob; files=(hooks/*.sh scripts/*.sh); [[ ${#files[@]} -gt 0 ]] && shellcheck \"${files[@]}\" || echo \"no .sh files to check\"'"
   },
   "dependencies": {
+    "semver": "^7.8.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

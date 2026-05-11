@@ -335,7 +335,19 @@ The engine refuses to advance the cursor unless every acceptance criterion has a
 
 ## Status
 
-**v1.0.0 — stable.** All foundational phases shipped:
+**v1.2.1 — stable.** Stability & UX SOTA pass + patch closing all ten self-critique gaps from v1.2.0. All foundational phases plus six new product surfaces:
+
+**New in v1.2.0:**
+- **`/goal-mode:goal-doctor`** — one-shot health diagnostic with 9 checks (state/tree validity, schema version, broken backups, cursor resolution, plugin pin freshness, Stop-hook liveness, budget headroom, event-log presence). Each check has a concrete fix command.
+- **Schema migrations** — `engine/migrations.mjs` framework + v1→v2 first migration. Auto-applies on `loadState`/`loadTree`/`saveState`/`saveTree`/`validatePlan`. Preserves originals as `.pre-migration-v<N>-<ts>`.
+- **Progress bar in every continuation prompt** — ASCII Sprint/Epic/Task/Overall progress block with █/░ bars + percentages.
+- **SessionStart auto-resume hook** — new CC session in a project with active pursuing goal auto-injects the continuation prompt. No more typing "продолжай".
+- **Resume UX rewrite** — distinct, actionable messages per lifecycle (no more misleading "No active goal" when state exists).
+- **Reviewer-independence enforcement** — `<audit-verdict>` tags only count when the transcript shows a real `Agent(subagent_type=X)` invocation since the last `cursor-advanced`. Closes the "fabricated GO" loophole.
+- **Event-log architecture** — append-only `events.jsonl` dual-written alongside `state.history`. Crash recovery via `loadStateWithRecovery` replays events to reconstruct missing state.
+- **Two-layer output convention** — continuation prompts instruct assistants to write human-readable bullets ABOVE a `<details>` block containing machine tags. Conversation reads clean; engine still parses.
+
+All foundational phases shipped:
 
 - ✅ Zod schemas + atomic persistence (`engine/state.mjs`)
 - ✅ Pure renderer + 8 prompt templates (`engine/continuation.mjs`, `prompts/`)

@@ -175,3 +175,73 @@ describe('parseTags hardening fix-ups', () => {
     expect(kinds).toEqual(['evidence', 'task-status', 'blocker', 'review-request', 'audit-verdict']);
   });
 });
+
+describe('parseTags two-layer output convention (human summary + tags inside <details>)', () => {
+  it('extracts evidence/task-status from inside <details><summary>...</summary>...</details>', () => {
+    const text = `
+**reserveSaveAnchorPropSlot()** ✅
+
+- **AC#0** — slot exists in triggers layer with type=save_anchor (8/8 tests pass)
+- **AC#1** — approach corridor not blocked by two reachability proofs
+
+<details>
+<summary>engine evidence (machine-parsed)</summary>
+
+<evidence file="src/data/save_anchor_slot.ts" line="86" criterion="0" note="canonical slot at (1696,1312) 64×32" />
+<evidence file="src/data/save_anchor_slot.test.ts" line="139" criterion="1" note="player_start overlap + 140 walkable cells" />
+<task-status>achieved</task-status>
+</details>
+`;
+    const tags = parseTags(text);
+    const kinds = tags.map(t => t.kind);
+    expect(kinds).toEqual(['evidence', 'evidence', 'task-status']);
+    expect(tags[0].criterion).toBe(0);
+    expect(tags[1].criterion).toBe(1);
+    expect(tags[2].value).toBe('achieved');
+  });
+
+  it('extracts audit-verdict from inside <details> for review turns', () => {
+    const text = `
+**Review verdicts for task-4**
+
+- **rpg-game-designer** — GO: contract is comprehensive
+- **art-director** — GO: visuals approved
+
+<details>
+<summary>engine verdicts (machine-parsed)</summary>
+
+<audit-verdict agent="rpg-game-designer" status="GO">All 3 acceptance criteria met. §2 covers font stack, §8.3 covers thresholds.</audit-verdict>
+<audit-verdict agent="art-director" status="GO">Cool-tone read-anchors present per actor.</audit-verdict>
+</details>
+`;
+    const tags = parseTags(text);
+    expect(tags).toHaveLength(2);
+    expect(tags[0]).toMatchObject({ kind: 'audit-verdict', agent: 'rpg-game-designer', status: 'GO' });
+    expect(tags[1]).toMatchObject({ kind: 'audit-verdict', agent: 'art-director', status: 'GO' });
+  });
+
+  it('still strips fenced code blocks even when human summary contains them (anti-regression)', () => {
+    const text = `
+**Task** ✅
+
+Bullet summary here.
+
+\`\`\`
+<evidence file="ignored.ts" criterion="0" note="example tag — must be stripped" />
+\`\`\`
+
+<details>
+<summary>real evidence</summary>
+
+<evidence file="real.ts" line="1" criterion="0" note="real" />
+<task-status>achieved</task-status>
+</details>
+`;
+    // Mimic stop-hook's stripCodeRegions step.
+    const stripped = text.replace(/\`\`\`[\s\S]*?\`\`\`/g, '').replace(/\`[^\`\n]+\`/g, '');
+    const tags = parseTags(stripped);
+    expect(tags).toHaveLength(2);
+    expect(tags[0].file).toBe('real.ts');
+    expect(tags[1].value).toBe('achieved');
+  });
+});

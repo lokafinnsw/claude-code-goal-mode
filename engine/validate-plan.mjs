@@ -37,6 +37,7 @@
  */
 
 import { GoalTreeSchema } from './state.mjs';
+import { CURRENT_SCHEMA_VERSION, runMigrations } from './migrations.mjs';
 
 // Word-bounded for the first 4 alphabetic tokens; '???' is matched
 // unanchored because '?' is not a \w char and \b around it would never
@@ -50,8 +51,22 @@ export function validatePlan(tree, opts = {}) {
   const errors = [];
   const warnings = [];
 
+  // Auto-migrate stale-schema input so callers (CLI commands, ad-hoc plan
+  // validation, example-plans tests) can pass any tree the engine has ever
+  // produced. Same contract as saveState/saveTree.
+  let upgraded = tree;
+  const fromVersion = tree?.schema_version;
+  if (typeof fromVersion === 'number' && fromVersion < CURRENT_SCHEMA_VERSION) {
+    const result = runMigrations(null, tree, fromVersion, CURRENT_SCHEMA_VERSION);
+    if (result.error) {
+      errors.push(`schema-migration: v${fromVersion}→v${CURRENT_SCHEMA_VERSION} failed: ${result.error}`);
+      return { ok: false, errors, warnings };
+    }
+    upgraded = result.tree;
+  }
+
   try {
-    GoalTreeSchema.parse(tree);
+    GoalTreeSchema.parse(upgraded);
   } catch (e) {
     errors.push(`schema: ${e.message}`);
     return { ok: false, errors, warnings };
@@ -81,6 +96,6 @@ export function validatePlan(tree, opts = {}) {
     for (const child of node.children) check(child);
   }
 
-  check(tree.root);
+  check(upgraded.root);
   return { ok: errors.length === 0, errors, warnings };
 }

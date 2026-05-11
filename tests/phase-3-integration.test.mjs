@@ -5,7 +5,7 @@ import { applyMutations } from '../engine/apply-mutations.mjs';
 // Helper: minimal one-task tree that the pipeline mutates.
 function freshTree(criteria = ['c0', 'c1'], reviewers = []) {
   return {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'g',
     mission: 'm',
     created_at: '2026-05-09T00:00:00.000Z',
@@ -22,7 +22,7 @@ function freshTree(criteria = ['c0', 'c1'], reviewers = []) {
 
 function freshState(cursor = 't', iter = 1) {
   return {
-    schema_version: 1, goal_id: 'g', lifecycle: 'pursuing', cursor,
+    schema_version: 2, goal_id: 'g', lifecycle: 'pursuing', cursor,
     budget: { iterations: { used: iter, max: 100 }, tokens: { used: 0, max: 0 }, wallclock: { started_at: '2026-05-09T00:00:00.000Z', max_seconds: 0 } },
     session_id: 's', started_at: '2026-05-09T00:00:00.000Z',
     paused_at: null, ended_at: null, ended_reason: null,

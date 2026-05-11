@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "goal_id": "feature-auth-jwt",
   "mission": "Replace session-cookie auth with JWT (access + refresh) in the Node.js API",
   "created_at": "2026-05-10T00:00:00.000Z",
@@ -44,7 +44,10 @@
               "getSigningKey() throws with message 'JWT_SECRET not set' when the env var is missing",
               "A unit test under tests/auth/signing-key.test.js exercises both the success and missing-env paths"
             ],
-            "review": ["security-reviewer", "js-reviewer"],
+            "review": [
+              "security-reviewer",
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "auth",
             "status": "pending",
@@ -64,7 +67,10 @@
               "verifyAccessToken throws a typed TokenExpiredError for tokens past their exp claim (verified by unit test using a 1-second TTL)",
               "verifyAccessToken throws a typed TokenSignatureError when the token body is mutated after signing (verified by a tampered-token unit test)"
             ],
-            "review": ["security-reviewer", "js-reviewer"],
+            "review": [
+              "security-reviewer",
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "auth",
             "status": "pending",
@@ -84,7 +90,10 @@
               "requireAuth rejects expired tokens with HTTP 401 and body {error: 'token_expired'}",
               "An integration test hits a protected route with a valid token and receives 200 with the expected handler response"
             ],
-            "review": ["security-reviewer", "js-reviewer"],
+            "review": [
+              "security-reviewer",
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "middleware",
             "status": "pending",
@@ -121,7 +130,10 @@
               "A second POST /auth/refresh using the previously-rotated refresh token returns HTTP 401 with body {error: 'refresh_token_reused'}",
               "Integration test in tests/auth/refresh.test.js covers both the happy path and the reuse-rejection path"
             ],
-            "review": ["security-reviewer", "js-reviewer"],
+            "review": [
+              "security-reviewer",
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "auth",
             "status": "pending",
@@ -141,7 +153,10 @@
               "A POST /auth/refresh request using a revoked refresh token returns HTTP 401 with body {error: 'refresh_token_revoked'}",
               "Integration test in tests/auth/logout.test.js covers logout followed by refresh-attempt rejection"
             ],
-            "review": ["security-reviewer", "js-reviewer"],
+            "review": [
+              "security-reviewer",
+              "js-reviewer"
+            ],
             "validate": "npm test",
             "work_front": "auth",
             "status": "pending",

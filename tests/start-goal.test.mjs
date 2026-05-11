@@ -6,7 +6,7 @@ import path from 'node:path';
 import { saveTree } from '../engine/state.mjs';
 
 const approvedTree = () => ({
-  schema_version: 1,
+  schema_version: 2,
   goal_id: 'g',
   mission: 'm',
   created_at: '2026-05-09T00:00:00.000Z',
@@ -154,7 +154,7 @@ describe('startGoal post-1.0.0 hardening (Bug A — restartable lifecycles)', ()
     const adir = path.join(root, '.claude/goals/active');
     fs.mkdirSync(adir, { recursive: true });
     fs.writeFileSync(path.join(adir, 'state.json'), JSON.stringify({
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'g',
       lifecycle: stateLifecycle,
       cursor: 'pending',

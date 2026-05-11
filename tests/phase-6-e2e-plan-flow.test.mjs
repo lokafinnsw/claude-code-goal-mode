@@ -18,7 +18,7 @@ import { runStopHook } from '../engine/stop-hook.mjs';
  */
 function simulateGoalPlanOutput(projectRoot) {
   const tree = {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'e2e-plan-flow',
     mission: 'Two-task mission for Phase 6 → Phase 5 wiring proof.',
     created_at: new Date().toISOString(),
@@ -51,7 +51,7 @@ function simulateGoalPlanOutput(projectRoot) {
   saveTree(projectRoot, tree);
 
   const state = {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'e2e-plan-flow',
     lifecycle: 'draft',
     cursor: 'pending',

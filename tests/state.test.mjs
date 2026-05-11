@@ -7,7 +7,7 @@ import fs from 'node:fs';
 describe('GoalTreeSchema', () => {
   it('accepts a minimal valid tree', () => {
     const tree = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'demo',
       mission: 'demo mission',
       created_at: '2026-05-09T00:00:00.000Z',
@@ -51,7 +51,7 @@ describe('GoalTreeSchema', () => {
 
   it('rejects a task with empty acceptance_criteria', () => {
     const tree = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'demo',
       mission: 'demo',
       created_at: '2026-05-09T00:00:00.000Z',
@@ -78,7 +78,7 @@ describe('GoalTreeSchema', () => {
 
   it('rejects unknown status enum', () => {
     const tree = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'demo',
       mission: 'demo',
       created_at: '2026-05-09T00:00:00.000Z',
@@ -107,7 +107,7 @@ describe('GoalTreeSchema', () => {
 describe('GoalStateSchema', () => {
   it('accepts a minimal valid state', () => {
     const state = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'demo',
       lifecycle: 'draft',
       cursor: 'sprint-1',
@@ -128,7 +128,7 @@ describe('GoalStateSchema', () => {
 
   it('rejects unknown lifecycle', () => {
     const state = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'd',
       lifecycle: 'wat',
       cursor: 'a',
@@ -149,7 +149,7 @@ describe('GoalStateSchema', () => {
 
   it('rejects empty cursor', () => {
     const state = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'd',
       lifecycle: 'draft',
       cursor: '',
@@ -177,7 +177,7 @@ describe('atomic save/load', () => {
   it('saveState then loadState round-trips', () => {
     const dir = tmpdir();
     const state = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'g',
       lifecycle: 'draft',
       cursor: 'a',
@@ -216,7 +216,7 @@ describe('atomic save/load', () => {
   it('saveState writes via .tmp and renames atomically', () => {
     const dir = tmpdir();
     const state = {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'g',
       lifecycle: 'draft',
       cursor: 'a',
@@ -242,7 +242,7 @@ describe('atomic save/load', () => {
 describe('atomic save/load — tree', () => {
   function makeMinimalTree() {
     return {
-      schema_version: 1,
+      schema_version: 2,
       goal_id: 'tree-test',
       mission: 'tree round-trip mission',
       created_at: '2026-05-09T00:00:00.000Z',

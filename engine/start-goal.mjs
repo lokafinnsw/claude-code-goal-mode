@@ -31,6 +31,8 @@
 
 import { loadTree, loadState, saveState } from './state.mjs';
 import { walkLeafTasks } from './traversal.mjs';
+import { CURRENT_SCHEMA_VERSION } from './migrations.mjs';
+import { appendEvent } from './event-log.mjs';
 
 export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBudgetSeconds, force = false }) {
   const tree = loadTree(projectRoot);
@@ -55,7 +57,7 @@ export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBu
   if (!firstActive) return { ok: false, error: 'no pending or pursuing tasks in tree' };
   const now = new Date().toISOString();
   const state = {
-    schema_version: 1,
+    schema_version: CURRENT_SCHEMA_VERSION,
     goal_id: tree.goal_id,
     lifecycle: 'pursuing',
     cursor: firstActive.id,
@@ -80,5 +82,27 @@ export function startGoal(projectRoot, { sessionId, maxIter, tokenBudget, timeBu
     ],
   };
   saveState(projectRoot, state);
+  // Emit goal-started event so the event log carries the full initial
+  // configuration (budget caps, session id, started_at). Replay uses these
+  // to reconstruct a state.json equivalent to the one saveState just wrote,
+  // closing the v1.2.0 "replay missing budget/session" gap. Failure is
+  // non-fatal — state.json is still the authoritative initial write.
+  try {
+    appendEvent(projectRoot, {
+      ts: now,
+      iteration: 0,
+      kind: 'goal-started',
+      payload: {
+        goal_id: tree.goal_id,
+        session_id: sessionId,
+        cursor: firstActive.id,
+        started_at: now,
+        budget: state.budget,
+      },
+      derived_from_tag: null,
+    });
+  } catch (err) {
+    process.stderr.write(`[goal-mode] startGoal: event-log goal-started failed (non-fatal): ${err.message}\n`);
+  }
   return { ok: true, cursor: firstActive.id };
 }

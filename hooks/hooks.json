@@ -1,5 +1,5 @@
 {
-  "description": "Goal Mode plugin Stop hook — invokes the Node engine to drive long-horizon plan-tree execution. Reads JSON stdin from Claude Code, returns JSON stdout for the continuation loop.",
+  "description": "Goal Mode plugin hooks. Stop fires after every assistant turn to advance the plan-tree state. SessionStart fires on every new CC session to auto-inject the current continuation prompt when an active pursuing goal exists.",
   "hooks": {
     "Stop": [
       {
@@ -7,6 +7,16 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-hook.sh\""
           }
         ]
       }

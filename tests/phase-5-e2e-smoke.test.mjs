@@ -10,7 +10,7 @@ import { renderStatus } from '../engine/render-status.mjs';
 
 function makeApprovedTree() {
   return {
-    schema_version: 1,
+    schema_version: 2,
     goal_id: 'e2e-smoke',
     mission: 'Drive a 2-task goal end-to-end through the user lifecycle.',
     created_at: '2026-05-09T00:00:00.000Z',
