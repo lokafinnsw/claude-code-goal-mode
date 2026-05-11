@@ -286,6 +286,9 @@ function lifecycleHistoryEvent(to) {
     case 'achieved': return 'achieved';
     case 'unmet': return 'unmet';
     case 'budget-limited': return 'budget-exhausted';
+    // v2.0.4: escape-hatch landing state — distinct history event name so
+    // forensic walkers can grep for it precisely.
+    case 'awaiting-manual-approval': return 'lifecycle-changed';
     default: return 'started';
   }
 }

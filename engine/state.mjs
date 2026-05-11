@@ -80,6 +80,16 @@ export const LifecycleSchema = z.enum([
   'achieved',
   'unmet',
   'budget-limited',
+  // v2.0.4: terminal-but-recoverable state for the escape-hatch / unavailable-
+  // reviewer flow. Set automatically by apply-mutations.mjs when an
+  // <audit-verdict status="REVISE">unavailable; ...</audit-verdict> is emitted
+  // without a matching Agent dispatch. Stop hook's existing `lifecycle !==
+  // 'pursuing'` gate then suppresses further continuation prompts (so the
+  // chat doesn't keep firing the blocked template every turn while the user
+  // is offline / unable to register the reviewer). Recovery via
+  // /goal-mode:goal-approve <task-id>, which restores lifecycle='pursuing'
+  // and advances the cursor as if the reviewer returned GO.
+  'awaiting-manual-approval',
 ]);
 
 // History event tag. v2.0.3 (bug I2 fix) liberalized this from a strict zod

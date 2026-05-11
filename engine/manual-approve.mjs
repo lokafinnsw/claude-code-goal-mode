@@ -64,7 +64,18 @@ export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   return withLockSync(activeDir(projectRoot), 'manual-approve', {}, () => {
   const state = loadState(projectRoot);
   if (!state) return { ok: false, error: 'No active goal.' };
-  if (state.lifecycle !== 'pursuing') {
+  // v2.0.4: accept `awaiting-manual-approval` lifecycle as a valid entry
+  // point. This is the escape-hatch landing state (set by apply-mutations
+  // when a reviewer's subagent_type is unavailable). The flow:
+  //   pursuing+review-pending → escape-hatch verdict → blocked +
+  //   awaiting-manual-approval → /goal-approve → pursuing+achieved →
+  //   advance cursor.
+  // Pre-v2.0.4 manualApprove rejected non-pursuing lifecycles outright
+  // (you had to manually edit state.json to recover, which the engine's
+  // ADR-0001 design discourages).
+  const allowedLifecycle = state.lifecycle === 'pursuing'
+    || state.lifecycle === 'awaiting-manual-approval';
+  if (!allowedLifecycle) {
     return { ok: false, error: `cannot manually approve from lifecycle=${state.lifecycle}` };
   }
   const tree = loadTree(projectRoot);
@@ -74,8 +85,17 @@ export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   if (!node) {
     return { ok: false, error: `cursor ${state.cursor} not found in tree` };
   }
-  if (node.status !== 'review-pending') {
-    return { ok: false, error: `cursor not review-pending (is ${node.status})` };
+  // v2.0.4: accept both `review-pending` (standard path) and `blocked` when
+  // lifecycle is `awaiting-manual-approval` (escape-hatch path). Error
+  // wording preserves the legacy "not review-pending" substring so existing
+  // CLI scripts and tests that grep for it still match.
+  const okStatus = node.status === 'review-pending'
+    || (node.status === 'blocked' && state.lifecycle === 'awaiting-manual-approval');
+  if (!okStatus) {
+    return {
+      ok: false,
+      error: `cursor not review-pending or awaiting-manual-approval (is ${node.status}, lifecycle=${state.lifecycle})`,
+    };
   }
 
   const ts = new Date().toISOString();
@@ -100,8 +120,28 @@ export function manualApprove(projectRoot, { reason = 'manual approve' } = {}) {
   );
 
   node.status = 'achieved';
+  // v2.0.4: clear stale escape-hatch blocker_reason on the node we're
+  // approving. Otherwise the tree carries a confusing "unavailable
+  // reviewer" note on an achieved node forever.
+  if (node.blocker_reason) {
+    node.blocker_reason = null;
+  }
   const next = nextPendingTaskAfter(tree, node.id);
   state.cursor = next ? next.id : node.id;
+  // v2.0.4: restore lifecycle from `awaiting-manual-approval` to
+  // `pursuing` so the Stop hook resumes work on the next cursor (or
+  // hits the !next branch below for terminal achievement).
+  const wasAwaitingApproval = state.lifecycle === 'awaiting-manual-approval';
+  if (wasAwaitingApproval) {
+    state.lifecycle = 'pursuing';
+    state.history.push({
+      ts,
+      iteration: state.budget.iterations.used,
+      event: 'lifecycle-changed',
+      node_id: node.id,
+      payload: { from: 'awaiting-manual-approval', to: 'pursuing', reason: 'manual-approve override' },
+    });
+  }
 
   // NOTE: manualApprove does NOT increment state.budget.iterations.used.
   // A manual review is a user action between iterations, not an iteration

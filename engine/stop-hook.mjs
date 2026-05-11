@@ -409,7 +409,31 @@ export async function runStopHook({ stdin, projectRoot }) {
       return { exit: 0, stdout: { decision: 'block', reason, systemMessage: '🔴 goal unmet' } };
     }
 
-    if (newState.lifecycle !== 'pursuing') {
+    // v2.0.4: awaiting-manual-approval transition handling.
+    //
+    // When the assistant emits the escape-hatch verdict
+    // (status=REVISE + "unavailable; ..."), apply-mutations transitions
+    // lifecycle to `awaiting-manual-approval`. We render the
+    // continuation-blocked.md prompt ONCE on the transition tick — so the
+    // user sees the recovery instructions (/goal-approve | register agent
+    // | revise plan) — and then on subsequent ticks the lifecycle gate
+    // below suppresses further prompts. This kills the pre-v2.0.4 spam
+    // loop where the agent kept emitting <task-status>blocked</task-status>
+    // every turn (because it can't fix an environmental issue from code)
+    // and ticked review_attempts toward the 3-strike unmet threshold.
+    if (newState.lifecycle === 'awaiting-manual-approval') {
+      const transitionedThisTurn = turnHistory.some(
+        (h) => h.event === 'lifecycle-changed' && h.payload?.to === 'awaiting-manual-approval',
+      );
+      if (!transitionedThisTurn) {
+        // Not the transition tick — suppress prompt (idle until
+        // /goal-approve or external intervention).
+        return { exit: 0, stdout: null };
+      }
+      // Transition tick: fall through to the continuation-blocked.md render
+      // below so the user gets ONE clear recovery prompt with the
+      // unavailable_reviewers_csv enrichment.
+    } else if (newState.lifecycle !== 'pursuing') {
       return { exit: 0, stdout: null };
     }
 
@@ -654,6 +678,20 @@ function historyToEventPartial(h, goalId) {
     return {
       ts: h.ts, goal_id: goalId, kind: 'lifecycle-changed',
       payload: { from: 'pursuing', to: h.event, reason: h.payload?.reason ?? null },
+    };
+  }
+  if (h.event === 'lifecycle-changed') {
+    // v2.0.4: explicit lifecycle-changed history entries (introduced for the
+    // escape-hatch awaiting-manual-approval transition). Persist to events.jsonl
+    // so forensic replay and doctor's cache-freshness check see the same
+    // lifecycle moves the cache reflects.
+    return {
+      ts: h.ts, goal_id: goalId, kind: 'lifecycle-changed',
+      payload: {
+        from: h.payload?.from ?? 'unknown',
+        to: h.payload?.to ?? 'unknown',
+        reason: h.payload?.reason ?? null,
+      },
     };
   }
   if (h.event === 'budget-exhausted') {

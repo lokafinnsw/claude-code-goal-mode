@@ -4,6 +4,53 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] — 2026-05-11
+
+**Escape-hatch lifecycle gate.** Kills the "Не лезу loop" user-reported on 2026-05-11.
+
+### The bug it closes
+
+Pre-v2.0.4, when an assistant emitted the escape-hatch verdict (`<audit-verdict status="REVISE">unavailable; user must run /goal-approve</audit-verdict>` — the documented signal that the reviewer's subagent_type isn't registered in the environment), v2.0.1's fix marked the cursor `blocked` immediately with a recovery hint in `cursor.blocker_reason`. But **lifecycle stayed `pursuing`**, so the Stop hook kept firing `continuation-blocked.md` on every subsequent turn. The agent (which cannot fix an environmental missing-subagent-type problem from code) re-emitted `<task-status>blocked</task-status>` with the same reason every turn, ticking `cursor.review_attempts` toward the 3-strike `unmet` threshold. Within ~3 turns the goal terminated `unmet` purely from environmental cause — even though all the substantive work was correct.
+
+Worse: each `decision: 'block'` Stop-hook prompt **forced** the assistant to emit text to unblock the chat turn. The user saw 10+ repeated "Не лезу" minimum-text responses while the engine kept demanding action on a task the assistant couldn't address.
+
+### Fix
+
+New `awaiting-manual-approval` lifecycle — terminal-but-recoverable state introduced by the escape-hatch flow:
+
+- **`engine/apply-mutations.mjs`** — when an escape-hatch verdict fires, the same `applyMutations` call now ALSO transitions `state.lifecycle = 'awaiting-manual-approval'` and emits a `lifecycle-changed` history event with `from: pursuing`, `to: awaiting-manual-approval`, `unavailable_reviewers: [...]`.
+- **`engine/stop-hook.mjs`** — renders `continuation-blocked.md` ONCE on the transition tick (so the user sees the recovery instructions: `/goal-approve` / register agent / revise plan). On all subsequent ticks the existing `lifecycle !== 'pursuing'` gate fires and Stop-hook returns null stdout → no spam, no forced response.
+- **`engine/manual-approve.mjs`** — accepts both standard entry (cursor `review-pending` + lifecycle `pursuing`) AND escape-hatch entry (cursor `blocked` + lifecycle `awaiting-manual-approval`). On success: clears `cursor.blocker_reason`, marks cursor `achieved`, advances `state.cursor`, restores `state.lifecycle = 'pursuing'`, and emits a paired `lifecycle-changed` event for the reverse transition.
+- **`engine/session-start-hook.mjs`** — surfaces the awaiting state on new session open with the three recovery options (was previously silent because lifecycle ≠ pursuing).
+- **`engine/lifecycle-commands.mjs`** — `/goal-resume` rejects awaiting-manual-approval with a clear "use /goal-approve <task-id>" hint. `/goal-abandon` accepts the lifecycle (user can decide to mark goal `unmet` instead of approving). `/goal-pause` rejects (only `pursuing` is pauseable; awaiting-manual-approval is already idle).
+- **`engine/doctor.mjs`** — new `checkAwaitingManualApproval` reports `warn` with action when goal is stalled, surfacing the unavailable reviewer name(s) from history. Other lifecycles → `ok`.
+- **`engine/state.mjs`** — `LifecycleSchema` enum extended with `'awaiting-manual-approval'`.
+- **`engine/reducer.mjs`** — `lifecycleHistoryEvent('awaiting-manual-approval')` returns `'lifecycle-changed'` for forensic walk grep-ability.
+
+### Tests
+
+- **`tests/awaiting-manual-approval.test.mjs`** — 19 new regression tests:
+  - apply-mutations lifecycle transition + history event shape (3 tests)
+  - Stop hook one-time render + subsequent suppression (2 tests)
+  - manualApprove escape-hatch entry + lifecycle restoration + blocker_reason clear + paired transition + still-rejects-other-cases (5 tests)
+  - SessionStart hook surfacing (2 tests)
+  - lifecycle commands handling (3 tests)
+  - doctor check (3 tests)
+  - **end-to-end "no Не-лезу loop" integration**: escape-hatch → one prompt → 3 silent ticks → /goal-approve → cursor advances (1 test)
+
+### Test suite
+
+- 907 pass / 2 skip / 0 fail across 52 files (was 888/2/0 in v2.0.3). +19 tests.
+
+### Doctor
+
+- 13 ok / 0 warn / 0 fail on a healthy goal (was 12/0/0 in v2.0.3). New `awaiting-manual-approval` check.
+
+### Migration
+
+- No schema migration. Pull v2.0.4, `bash install.sh`, restart Claude Desktop.
+- Existing goals stuck in pre-v2.0.4 `unmet`-from-escape-hatch state: run `/goal-mode:goal-clear --archive`, re-plan from where the work landed. Future escape-hatch cases will auto-transition to the new lifecycle and never hit the unmet path.
+
 ## [2.0.3] — 2026-05-11
 
 **Full SOTA hardening pass — Apex2 methodology (Plan → Explore → Execute → Verify).**

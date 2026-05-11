@@ -41,6 +41,27 @@ export async function runSessionStartHook({ stdin, projectRoot }) {
 
     const state = loadState(projectRoot);
     if (!state) return { exit: 0, stdout: null };
+    // v2.0.4: surface awaiting-manual-approval lifecycle on SessionStart so
+    // the user sees the stalled state when they open a new session. Without
+    // this, the session is silent (lifecycle !== 'pursuing' gate suppresses
+    // everything) and the user has no idea why the goal isn't advancing.
+    if (state.lifecycle === 'awaiting-manual-approval') {
+      return {
+        exit: 0,
+        stdout: {
+          hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext:
+              `⛔ goal-mode: active goal "${state.goal_id}" is waiting for manual approval on cursor ${state.cursor}.\n\n`
+              + `A reviewer subagent_type was unavailable in this environment when the gate fired. The goal is paused (no Stop-hook prompts will fire) until you do ONE of:\n`
+              + `  • Override: run \`/goal-mode:goal-approve ${state.cursor}\` to GO the blocked node and resume work\n`
+              + `  • Register reviewer: create ~/.claude/agents/<name>.md with matching \`name:\` frontmatter, then \`/goal-mode:goal-abandon\` + replan if you want a fresh review\n`
+              + `  • Abandon: \`/goal-mode:goal-abandon\` if you no longer want this goal\n\n`
+              + `Run \`/goal-mode:goal-doctor\` for full diagnostics.`,
+          },
+        },
+      };
+    }
     if (state.lifecycle !== 'pursuing') return { exit: 0, stdout: null };
 
     const tree = loadTree(projectRoot);

@@ -91,6 +91,12 @@ export function resumeGoal(projectRoot) {
       error: `Goal is in terminal lifecycle=${state.lifecycle} (${state.ended_reason ?? 'no reason recorded'}). To start fresh: /goal-mode:goal-clear --archive then /goal-mode:goal-plan.`,
     };
   }
+  if (state.lifecycle === 'awaiting-manual-approval') {
+    return {
+      ok: false,
+      error: `Goal is paused waiting for manual reviewer approval (cursor=${state.cursor}). Use /goal-mode:goal-approve ${state.cursor} to GO the blocked node, or register the missing reviewer agent (e.g. ~/.claude/agents/<name>.md) and resume work that way.`,
+    };
+  }
   if (state.lifecycle !== 'paused') {
     return { ok: false, error: `Cannot resume from lifecycle=${state.lifecycle}; expected 'paused'.` };
   }
@@ -153,7 +159,10 @@ export function clearGoal(projectRoot, { archive = false } = {}) {
  * destroying ended_at / ended_reason on already-terminal states (achieved,
  * unmet) or transitioning out of pre-pursuit states (draft).
  */
-const ABANDONABLE_LIFECYCLES = new Set(['pursuing', 'paused']);
+// v2.0.4: awaiting-manual-approval is abandonable (terminal-but-recoverable
+// state from escape-hatch). The user may legitimately decide they don't want
+// to /goal-approve and the goal should be marked unmet.
+const ABANDONABLE_LIFECYCLES = new Set(['pursuing', 'paused', 'awaiting-manual-approval']);
 
 export function abandonGoal(projectRoot, { reason = 'manual abandon' } = {}) {
   return withLockSync(activeDir(projectRoot), 'goal-abandon', {}, () => {

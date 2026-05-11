@@ -479,6 +479,35 @@ export function checkEventLogPresent(projectRoot) {
   );
 }
 
+/**
+ * v2.0.4: surface awaiting-manual-approval lifecycle as an actionable
+ * warn so doctor users instantly see "your goal is stalled waiting for
+ * /goal-approve". Other lifecycles produce `ok` (info-level passthrough).
+ */
+export function checkAwaitingManualApproval(projectRoot) {
+  const id = 'awaiting-manual-approval';
+  const state = loadState(projectRoot);
+  if (!state) return ok(id, 'no goal active');
+  if (state.lifecycle !== 'awaiting-manual-approval') {
+    return ok(id, `lifecycle=${state.lifecycle}; no manual approval pending`);
+  }
+  // Walk back to the most recent node-blocked event with escape_hatch=true
+  // to surface the agent name(s) that triggered the gate.
+  const lastBlocked = [...(state.history ?? [])]
+    .reverse()
+    .find((e) => e.event === 'node-blocked' && e.payload?.escape_hatch === true);
+  const agents = lastBlocked?.payload?.unavailable_reviewers
+    ?? (state.history.filter((h) => h.event === 'lifecycle-changed' && h.payload?.to === 'awaiting-manual-approval')
+        .slice(-1)[0]?.payload?.unavailable_reviewers)
+    ?? [];
+  const agentLabel = agents.length > 0 ? agents.join(', ') : '(unknown reviewer)';
+  return warn(
+    id,
+    `goal is waiting for manual approval on cursor ${state.cursor} (unavailable reviewer: ${agentLabel})`,
+    `run /goal-mode:goal-approve ${state.cursor} to override AND advance, OR register the reviewer agent in ~/.claude/agents/<name>.md and abandon+restart, OR /goal-mode:goal-abandon if you no longer want this goal`,
+  );
+}
+
 export const CHECKS = {
   'state-loadable': checkStateLoadable,
   'tree-loadable': checkTreeLoadable,
@@ -488,6 +517,7 @@ export const CHECKS = {
   'plugin-pin-current': checkPluginPinCurrent,
   'stop-hook-fired-recently': checkStopHookFiredRecently,
   'budget-headroom': checkBudgetHeadroom,
+  'awaiting-manual-approval': checkAwaitingManualApproval,
   'event-log-present': checkEventLogPresent,
   'pre-migration-backup-retention': checkPreMigrationBackupRetention,
   'v2-migrated': checkV2Migrated,

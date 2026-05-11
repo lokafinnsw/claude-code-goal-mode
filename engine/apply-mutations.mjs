@@ -253,9 +253,23 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
   // Rationale: the reviewer can't be dispatched in this environment, so
   // re-prompting the agent to "dispatch the Agent tool" loops forever. The
   // user must either /goal-approve to override or register the reviewer
-  // agent (e.g. ~/.claude/agents/<name>.md) and retry. Blocking on first
-  // occurrence (vs the standard 3-strike threshold) gives the user the
-  // recovery hint in the next Stop-hook prompt without N cycles of spam.
+  // agent (e.g. ~/.claude/agents/<name>.md) and retry.
+  //
+  // v2.0.4 additional fix (the "Не лезу loop" bug user-reported 2026-05-11):
+  // ALSO transition lifecycle to 'awaiting-manual-approval'. Pre-v2.0.4 the
+  // node was blocked but lifecycle stayed `pursuing`, so the Stop hook kept
+  // firing the continuation-blocked.md prompt every turn. The agent (which
+  // can't fix the environmental issue programmatically) re-emitted
+  // <task-status>blocked</task-status> with the same blocker, ticking
+  // review_attempts toward the 3-strike unmet threshold. Within a few
+  // turns the goal terminated `unmet` even though all the substantive
+  // work was correct — purely environmental cause.
+  //
+  // The new lifecycle is terminal-but-recoverable: Stop hook's existing
+  // `lifecycle !== 'pursuing'` gate suppresses further continuation prompts
+  // (no spam), and /goal-mode:goal-approve <task-id> restores
+  // lifecycle='pursuing' and advances the cursor as if the reviewer
+  // returned GO.
   if (escapeHatchVerdicts.length > 0 && cursorNode.status === 'review-pending') {
     const unavailable = [...new Set(escapeHatchVerdicts.map(v => v.agent))];
     cursorNode.status = 'blocked';
@@ -266,6 +280,20 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
       event: 'node-blocked',
       node_id: cursorNode.id,
       payload: { reason: cursorNode.blocker_reason, escape_hatch: true },
+    });
+    // v2.0.4: gate Stop-hook spam by transitioning lifecycle.
+    state.lifecycle = 'awaiting-manual-approval';
+    history.push({
+      ts,
+      iteration: state.budget.iterations.used,
+      event: 'lifecycle-changed',
+      node_id: cursorNode.id,
+      payload: {
+        from: 'pursuing',
+        to: 'awaiting-manual-approval',
+        reason: 'escape-hatch: reviewer agent(s) unavailable in environment',
+        unavailable_reviewers: unavailable,
+      },
     });
   }
 

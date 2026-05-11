@@ -335,6 +335,8 @@ The engine refuses to advance the cursor unless every acceptance criterion has a
 
 ## Status
 
+**v2.0.4 — stable (escape-hatch lifecycle gate).** Kills the "Не лезу loop" bug: when reviewer subagent_type is unavailable in env, escape-hatch verdict now transitions to new `awaiting-manual-approval` lifecycle. Stop hook fires recovery prompt ONCE then suppresses subsequent ticks (no more 3-strike unmet from environmental cause). `/goal-approve` restores `pursuing` + advances cursor. New SessionStart surfacing + doctor check. **907 pass / 0 fail / 52 files**. See CHANGELOG [2.0.4].
+
 **v2.0.3 — stable (full SOTA hardening pass).** Apex2-methodology release closing every Critical / Important / Minor finding from the 2026-05-11 engineering audit of v2.0.2. Zero tech debt. 5 Critical bugs (SessionStart context dropouts, project-pollution mkdir, O(full-file) transcript reads, rotation token undercounting, cache-writeback race), 10 Important, 8 Minor — all with regression tests. New shared `engine/hook-context.mjs` plus incremental transcript checkpoint engine. **888 tests pass / 0 fail / 51 files**. See CHANGELOG [2.0.3].
 
 **v2.0.2 — stable (hotfix).** Cross-project leakage fix: hooks now prefer `stdin.cwd` (Claude Code's canonical per-event project dir) over `process.cwd()`. Eliminates the bug where mancelot/other goal's continuation prompt leaked into unrelated project sessions in Claude Desktop multi-tab setups. See CHANGELOG [2.0.2].
