@@ -29,6 +29,14 @@
  *                                          violation, no dispatch detected,
  *                                          and not an escape-hatch)
  *
+ * SECURITY BOUNDARY: this core trusts opts.scannedAgents verbatim. The CLI
+ * layer (engine/submit-verdict-cli.mjs, Sprint 1.6) is responsible for
+ * populating it from a REAL transcript scan of Agent() dispatches in the
+ * current turn. A caller passing a forged Set bypasses reviewer-independence
+ * enforcement — that is by design; verification belongs at the trust
+ * boundary, not duplicated here. Direct programmatic callers (tests) must
+ * supply the Set explicitly with full knowledge of this contract.
+ *
  * Error messages match engine/manual-approve.mjs convention.
  */
 import { loadTree, loadState, saveTree, saveState } from './state.mjs';
@@ -37,7 +45,7 @@ import { applyMutations } from './apply-mutations.mjs';
 import { activeDir, auditsDir } from './paths.mjs';
 import { withLockSync } from './lock.mjs';
 
-const VALID_STATUSES = new Set(['GO', 'NOGO', 'REVISE']);
+const VALID_STATUSES = Object.freeze(new Set(['GO', 'NOGO', 'REVISE']));
 
 export function submitVerdict(projectRoot, opts = {}) {
   if (!opts.agent || typeof opts.agent !== 'string') {
