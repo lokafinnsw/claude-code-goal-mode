@@ -47,6 +47,22 @@ export function evidenceAdd(
     if (!cursor) {
       return { ok: false, error: `cursor ${state.cursor} not found in tree` };
     }
+    // v3.0.3: auto-promote pending → pursuing on first engagement.
+    // Closes a deadlock where cursor was left in 'pending' status after
+    // goal-resume (or by historical v2 advance paths that didn't emit
+    // <task-status>pursuing</>), making v3 CLI verbs un-callable.
+    // Mutation is recorded as a 'cursor-engaged' history event.
+    if (cursor.status === 'pending' && cursor.type === 'task') {
+      cursor.status = 'pursuing';
+      const tsEngaged = new Date().toISOString();
+      state.history.push({
+        ts: tsEngaged,
+        iteration: state.budget.iterations.used,
+        event: 'cursor-engaged',
+        node_id: cursor.id,
+        payload: { from: 'pending', to: 'pursuing', reason: 'v3-cli-evidence-add' },
+      });
+    }
     if (cursor.status !== 'pursuing' && cursor.status !== 'review-pending') {
       return {
         ok: false,

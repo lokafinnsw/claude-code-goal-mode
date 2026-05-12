@@ -107,6 +107,7 @@ export const KNOWN_HISTORY_EVENTS = Object.freeze([
   'paused',
   'resumed',
   'cursor-advanced',
+  'cursor-engaged',
   'node-blocked',
   'review-requested',
   'review-verdict',

@@ -39,6 +39,21 @@ export function achieveCursor(projectRoot) {
     if (cursor.type !== 'task') {
       return { ok: false, error: `cannot achieve non-task node (cursor=${cursor.id}, type=${cursor.type})` };
     }
+    // v3.0.3: auto-promote pending → pursuing on first engagement.
+    // Symmetric with evidence-add. Closes deadlock when caller jumps
+    // straight to achieve (e.g. tests with pre-seeded evidence on a
+    // pending-status cursor).
+    if (cursor.status === 'pending' && cursor.type === 'task') {
+      cursor.status = 'pursuing';
+      const tsEngaged = new Date().toISOString();
+      state.history.push({
+        ts: tsEngaged,
+        iteration: state.budget.iterations.used,
+        event: 'cursor-engaged',
+        node_id: cursor.id,
+        payload: { from: 'pending', to: 'pursuing', reason: 'v3-cli-achieve' },
+      });
+    }
 
     // Compute missing criteria BEFORE invoking applyMutations so the caller
     // gets a clear error rather than a silent no-op (applyMutations's
