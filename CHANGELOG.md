@@ -4,6 +4,31 @@ All notable changes to Better Goal (formerly `claude-code-goal-mode`) are docume
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.6 — Smart silence detection (tool_use counts as engagement)
+
+Closes a false-positive in auto-pause-on-silence (v2.0.6) reported by user 2026-05-12 on mancelot autonomous run.
+
+### Root cause
+Auto-pause counted "no goal-mode tag emission this turn" as silence. But controllers doing legitimate work — running tests via Bash, reading source files via Read, dispatching subagents via Agent, editing code via Edit — fire ZERO goal-mode tags per-turn during exploration/setup phases. Only the final "achieve" turn emits tags. Multi-turn exploration (25+ turns is normal for complex tasks) accumulated false-positive silence and auto-paused.
+
+Raising silenceThreshold (v3.0.5: 5→20) was the wrong fix — it just delayed the same false-positive on slightly longer exploration phases.
+
+### Fix
+Engine now treats ANY `tool_use` block in the turn's transcript as engagement, alongside goal-mode tag events. Only turns with neither tools nor tags count as silent.
+
+### Changed
+- `engine/transcript-checkpoint.mjs`: `advanceTallyScan` returns `tool_use_count` from the scan window.
+- `engine/stop-hook.mjs`: `turnHadEngagement` now `OR`s tag events with `tool_use_count > 0`.
+- New regression tests in `tests/v3-tool-use-engagement.test.mjs`.
+
+### NOT changed
+- Auto-pause still active for genuine silence (controller refusing to engage, no tools, no tags).
+- Triple-budget hard ceiling unchanged.
+- `silenceThreshold` default stays at 20 from v3.0.5.
+- Stale-review-pending detector (v3.0.1), v3 CLI verbs (v3.0.0), auto-promote (v3.0.3) — all unchanged.
+
+---
+
 ## v3.0.5 — Raise auto-pause silenceThreshold default 5 → 20
 
 User feedback 2026-05-12: the v2.0.6 auto-pause-on-silence detector was too aggressive for autonomous production runs. Controllers legitimately spend 5-10 turns in exploration phases (reading files, running tests, iterating) without emitting goal-mode tags. The 5-turn threshold (calibrated against the degenerate "controller refuses to engage" case) triggered false-positive auto-pause on legitimate work.

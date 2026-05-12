@@ -12,7 +12,7 @@
         "source": "url",
         "url": "https://github.com/lokafinnsw/claude-code-goal-mode.git"
       },
-      "version": "3.0.5",
+      "version": "3.0.6",
       "description": "Better Goal — long-horizon autonomous mode with plan-tree, acceptance criteria, and triple budget.",
       "category": "development"
     }

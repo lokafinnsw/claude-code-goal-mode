@@ -420,7 +420,14 @@ export async function runStopHook({ stdin, projectRoot }) {
     // v3.0.5: threshold is config-driven (default 20). Sourced from
     // cfg.silenceThreshold (project override → user override → DEFAULTS).
     const SILENCE_THRESHOLD = cfg.silenceThreshold;
-    const turnHadEngagement = turnHistory.some((h) => ENGAGEMENT_EVENTS.has(h.event));
+    // v3.0.6: tool_use is engagement. Controllers running Bash/Read/Edit/Agent
+    // during exploration phases produce zero goal-mode tags but are clearly
+    // working. Without this, multi-turn exploration false-positive-triggers
+    // auto-pause-on-silence. Tag emission events stay primary; tool_use is
+    // a secondary engagement signal that prevents false-positives.
+    const turnHadEngagement =
+      turnHistory.some((h) => ENGAGEMENT_EVENTS.has(h.event))
+      || (tallyScan.tool_use_count ?? 0) > 0;
     const currentSilent = newState.consecutive_silent_turns ?? 0;
     if (turnHadEngagement) {
       newState.consecutive_silent_turns = 0;

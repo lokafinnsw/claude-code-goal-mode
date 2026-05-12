@@ -211,18 +211,24 @@ function readTranscriptSlice(transcriptPath, offset, size) {
 }
 
 /**
- * Parse a JSONL slice and extract usage tokens + Agent invocations.
+ * Parse a JSONL slice and extract usage tokens + Agent invocations + total
+ * tool_use block count.
  *
  * Token math mirrors engine/budget.mjs::tallyTokens — sum of input_tokens +
  * output_tokens + cache_creation_input_tokens on assistant rows. The
  * cache_read field is intentionally excluded (billed at a fraction of input
  * rate; counting it inflates the budget — see budget.mjs jsdoc).
  *
- * Returns `{ tokens_added, dispatches_added: [...] }`. Never throws on
- * malformed lines (skip + continue).
+ * v3.0.6: also counts ALL tool_use blocks (not just Agent). The Stop hook
+ * uses this as a secondary engagement signal so multi-turn exploration
+ * (Bash/Read/Edit/etc.) doesn't false-positive auto-pause-on-silence.
+ *
+ * Returns `{ tokens_added, dispatches_added: [...], tool_use_count }`.
+ * Never throws on malformed lines (skip + continue).
  */
 function parseSlice(text) {
   let tokensAdded = 0;
+  let toolUseCount = 0;
   const dispatchesAdded = [];
   for (const line of text.split('\n')) {
     if (!line) continue;
@@ -242,6 +248,9 @@ function parseSlice(text) {
     if (!Array.isArray(blocks)) continue;
     for (const b of blocks) {
       if (b?.type !== 'tool_use') continue;
+      // v3.0.6: every tool_use block contributes to the engagement counter,
+      // regardless of name. Bash/Read/Edit/Grep/Agent/etc. all count.
+      toolUseCount += 1;
       const name = b.name ?? b.tool_name ?? '';
       if (name !== 'Agent' && name !== 'agent') continue;
       const t = b.input?.subagent_type ?? b.input?.subagentType;
@@ -254,7 +263,7 @@ function parseSlice(text) {
       dispatchesAdded.push({ ts, subagent_type: t });
     }
   }
-  return { tokens_added: tokensAdded, dispatches_added: dispatchesAdded };
+  return { tokens_added: tokensAdded, dispatches_added: dispatchesAdded, tool_use_count: toolUseCount };
 }
 
 /**
@@ -282,7 +291,7 @@ export function advanceCheckpoint(projectRoot, transcriptPath) {
   } catch {
     // Transcript missing/inaccessible — return the cached checkpoint
     // unchanged. Caller uses cached counters as the best-effort source.
-    return { checkpoint: cached, rotated: false };
+    return { checkpoint: cached, rotated: false, tool_use_count: 0 };
   }
   let working = cached;
   let rotated = false;
@@ -306,11 +315,16 @@ export function advanceCheckpoint(projectRoot, transcriptPath) {
   if (working.fingerprint == null && size > 0) {
     working.fingerprint = readFingerprint(transcriptPath, size);
   }
+  // v3.0.6: tool_use_count is the count of tool_use blocks parsed in THIS
+  // scan window only (current tick). It is intentionally NOT persisted in
+  // the checkpoint — engagement is a per-turn signal, not cumulative.
+  let toolUseCount = 0;
   if (size > working.offset_bytes) {
     const { text, next_offset } = readTranscriptSlice(transcriptPath, working.offset_bytes, size);
     if (text) {
-      const { tokens_added, dispatches_added } = parseSlice(text);
+      const { tokens_added, dispatches_added, tool_use_count } = parseSlice(text);
       working.tokens_total += tokens_added;
+      toolUseCount = tool_use_count;
       for (const d of dispatches_added) working.agent_dispatches.push(d);
       // Cap the dispatches list size to prevent unbounded growth on long
       // goals. Drop oldest. This is a memory-safety bound, not a correctness
@@ -326,7 +340,7 @@ export function advanceCheckpoint(projectRoot, transcriptPath) {
   if (tokensFloor > working.tokens_total) {
     working.tokens_total = tokensFloor;
   }
-  return { checkpoint: working, rotated };
+  return { checkpoint: working, rotated, tool_use_count: toolUseCount };
 }
 
 /**
@@ -358,16 +372,24 @@ function filterDispatchesByTs(dispatches, sinceTs) {
  * `advanceCheckpoint` separately for tokens then for agents would double-
  * read and discard intermediate checkpoint state.
  *
- * Returns `{ tokens, agents, rotated, checkpoint }`. Caller persists
- * checkpoint via `saveCheckpoint` AFTER the rest of the Stop-hook work
- * succeeds, so a mid-turn crash leaves the previous checkpoint intact and
- * the next tick re-scans the same window.
+ * v3.0.6: extend the scan to surface `tool_use_count` for the current tick.
+ * The auto-pause-on-silence detector previously treated "no goal-mode tag
+ * emission this turn" as silence, which false-positived on legitimate
+ * controller work (Bash/Read/Edit/Agent turns during exploration phases).
+ * Counting any tool_use as engagement matches the controller's actual
+ * activity. The count is per-tick (NOT cumulative); intent is "did the
+ * controller use any tools in the window just scanned?".
+ *
+ * Returns `{ tokens, agents, tool_use_count, rotated, checkpoint }`.
+ * Caller persists checkpoint via `saveCheckpoint` AFTER the rest of the
+ * Stop-hook work succeeds, so a mid-turn crash leaves the previous
+ * checkpoint intact and the next tick re-scans the same window.
  */
 export function advanceTallyScan(projectRoot, transcriptPath, sinceTs, fallbackPreviousTotal = 0) {
-  const { checkpoint, rotated } = advanceCheckpoint(projectRoot, transcriptPath);
+  const { checkpoint, rotated, tool_use_count } = advanceCheckpoint(projectRoot, transcriptPath);
   const tokens = Math.max(checkpoint.tokens_total, fallbackPreviousTotal | 0);
   const agents = filterDispatchesByTs(checkpoint.agent_dispatches, sinceTs);
-  return { tokens, agents, rotated, checkpoint };
+  return { tokens, agents, tool_use_count, rotated, checkpoint };
 }
 
 /**
