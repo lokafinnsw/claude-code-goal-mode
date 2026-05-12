@@ -13,6 +13,70 @@ This skill teaches you (the controller agent driving a goal) how to interact wit
 
 The full functional reference is in `commands/goal-help.md` (the slash command `/goal-mode:goal-help`). This skill focuses on **behavior**: when to do what, what NOT to do, and how to recover from edge cases.
 
+## v3 Default Workflow (Stop-hook is hint-only)
+
+In v3.0+, the Stop hook returns `null` stdout on `lifecycle=pursuing` by default. The agent drives the goal explicitly via slash commands. **Stop hook does NOT inject continuation prompts every turn.** No more silence loops, no more multi-session leakage spam — the agent is in control of when state advances.
+
+### Recommended workflow
+
+1. **Inspect the cursor:**
+   ```
+   /goal-mode:goal-current
+   ```
+   Returns the cursor task with checkbox-style AC coverage. Use `--json` for scripting or `--as-builtin` for piping into Claude Code's built-in `/goal "..."` command.
+
+2. **Do the work in normal Claude Code mode.** Read files, edit code, run tests, etc. — no special tag emission required.
+
+3. **Record evidence per acceptance criterion:**
+   ```
+   /goal-mode:goal-evidence-add --criterion N --file path[:line] --note "..."
+   /goal-mode:goal-evidence-add --criterion N --command "npm test -- foo" --exit-code 0 --note "..."
+   ```
+   The engine validates `lifecycle='pursuing'` and `cursor.status ∈ {pursuing, review-pending}` per call.
+
+4. **Claim achievement:**
+   ```
+   /goal-mode:goal-achieve
+   ```
+   - If all ACs have evidence AND `cursor.review[]` is empty → marks achieved + advances cursor.
+   - If reviewers required → transitions cursor to `review-pending`.
+   - If any AC missing → exits 1, lists missing criterion indices.
+
+5. **If review-pending:** dispatch reviewers + record verdicts:
+   ```
+   /goal-mode:goal-review-request
+   ```
+   Prints the reviewer list + evidence summary + audit-instructions template.
+   For each reviewer, dispatch via the Agent tool:
+   ```
+   Agent({
+     subagent_type: "<reviewer>",
+     description: "Review task <cursor-id>",
+     prompt: "<audit-instructions template body>"
+   })
+   ```
+   For each verdict:
+   ```
+   /goal-mode:goal-submit-verdict --agent <reviewer> --status GO|NOGO|REVISE --text "..."
+   ```
+   The CLI scans the live transcript for a real `Agent(subagent_type=<name>)` dispatch — fabricated verdicts are rejected with `independence violation`.
+
+6. **Repeat from step 1 for the next cursor task.**
+
+### Escape-hatch: reviewer agent unavailable
+
+If a required `subagent_type` isn't installed in the current environment, submit a REVISE verdict with text starting `"unavailable; user must run /goal-approve"`. The engine routes this to lifecycle `awaiting-manual-approval` (cursor blocked but recoverable). User then runs `/goal-mode:goal-approve <task-id>` to manually approve.
+
+### Bridging to built-in /goal
+
+For simple work loops, pipe `/goal-mode:goal-current --as-builtin` output into Claude Code's built-in `/goal "..."` command. Built-in /goal handles the work loop via Anthropic's Haiku evaluator; goal-mode tracks structured progress, reviewers, and budget in parallel. After built-in /goal completes, run `/goal-mode:goal-evidence-add` + `/goal-mode:goal-achieve` to record progress in the structured tracker.
+
+### Legacy v2 driver mode
+
+If you set `stopHookDriver: true` in `.claude/goals/active/config.json` (per-project) or `~/.claude/plugins/goal-mode/config.json` (per-user), the legacy v2 driver kicks back in: Stop-hook injects continuation prompts each turn, and the agent emits XML tags (`<evidence>`, `<task-status>`, `<audit-verdict>`) as before. See the **Legacy v2 tag-emission workflow** section below for details.
+
+---
+
 ## Mental model (60 seconds)
 
 - A **goal** is a hierarchical plan-tree: **Sprint → Epic → Task**. Each task has acceptance criteria + optional review-agents that gate completion.
@@ -35,6 +99,8 @@ The full functional reference is in `commands/goal-help.md` (the slash command `
 | `budget-limited` | Iter/tokens/wallclock cap hit; terminal | Engine renders `budget-limit.md`; recovery via `/goal-resume` with fresh budget OR `/goal-clear` |
 
 ## Tag emission discipline
+
+> **Note:** This section applies under legacy `stopHookDriver: true` config. v3 default workflow uses explicit CLI verbs — see top of this document.
 
 The engine parses these tags from your text. Get them wrong and the engine ignores them silently.
 

@@ -3,6 +3,23 @@ name: goal-mode-tag-discipline
 description: Use when you need exact regex/format details for goal-mode tag emission (parse-tags.mjs semantics, code-fence stripping, attribute quoting, escape-hatch regex, edge cases). Use BEFORE emitting a complex/long verdict or evidence block to verify the tag is parseable.
 ---
 
+## v3.0 Status: Optional / Legacy Path
+
+In v3.0+, **tag emission is OPTIONAL**. The preferred path is explicit CLI verbs:
+
+- `<evidence/>` tag → `/goal-mode:goal-evidence-add --criterion N --file path[:line] --note "..."`
+- `<task-status>achieved</task-status>` → `/goal-mode:goal-achieve`
+- `<audit-verdict agent="X" status="GO">text</audit-verdict>` → `/goal-mode:goal-submit-verdict --agent X --status GO --text "text"`
+- `<review-request agents="X"/>` → `/goal-mode:goal-review-request` then dispatch via Agent tool
+
+The tag-emission path described below remains authoritative for:
+- Codex `/goal` and non-Claude-Code agents that can't invoke slash commands.
+- Users who opt in to legacy v2 driver behaviour via `stopHookDriver: true` config.
+
+For all other Claude Code users in v3.0+, prefer the explicit CLI workflow — it removes the entire class of bugs around tag parsing, fenced-code stripping, attribute quoting, and silent-loop traps that this document spends most of its space describing.
+
+---
+
 # Goal-mode tag emission — exact semantics
 
 This skill is the precise reference for the parser in `engine/parse-tags.mjs`. Use it when you need to know:
