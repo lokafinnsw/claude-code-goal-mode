@@ -18,20 +18,20 @@
 
 ## What's new in v3.0
 
-**v3.0 is a workflow redesign, not a rewrite.** Every v2.x state file loads unchanged. The plan-tree schema, event log, reviewer-independence guard, triple budget, and lock protocol are preserved.
+**v3.0 is a workflow addition, not a rewrite.** Every v2.x state file loads unchanged. The plan-tree schema, event log, reviewer-independence guard, triple budget, and lock protocol are preserved. v3 primarily **adds** explicit CLI verbs as an opt-in alternative to tag-emission, alongside the auto-drive Stop-hook.
 
 What changed:
 
-| Before (v2) | After (v3) |
+| Before (v2) | After (v3.0.4) |
 |---|---|
-| Stop-hook injects continuation prompt every turn on `lifecycle=pursuing` | Stop-hook returns `null` stdout on `pursuing` by default |
-| Agent emits XML tags in reply (`<evidence>`, `<task-status>`, ...) | Agent calls explicit slash commands |
-| Cursor advances via tag parsing in Stop-hook | Cursor advances via CLI verb (`achieve`, `submit-verdict`) |
-| Driver and agent loop tightly coupled (silence loops possible) | Agent owns the loop; goal-mode is a structured tracker |
+| Stop-hook injects continuation prompt every turn on `lifecycle=pursuing` | Stop-hook still auto-drives by default (v3.0.4 restored this). Hint-only mode is opt-in via `stopHookDriver: false` config. |
+| Agent emits XML tags in reply (`<evidence>`, `<task-status>`, ...) | Agent can emit tags OR call explicit slash commands (both work) |
+| Cursor advances via tag parsing in Stop-hook | Cursor advances via tag parsing OR CLI verb (`achieve`, `submit-verdict`) |
+| Driver and agent loop tightly coupled | Same loop by default; safety nets (auto-pause-on-silence, stale-review detector) prevent runaway spam |
 
-Legacy v2 driver remains available as opt-in via `.claude/goals/active/config.json` (per-project) or `~/.claude/plugins/goal-mode/config.json` (per-user):
+**v3.0.4 default:** auto-drive (`stopHookDriver: true`). Install, plan, walk away, come back to a finished feature — the original product value. Opt out into hint-only mode (no auto-drive; you call CLI verbs yourself) via `.claude/goals/active/config.json` (per-project) or `~/.claude/plugins/goal-mode/config.json` (per-user):
 ```json
-{ "schema_version": 1, "stopHookDriver": true }
+{ "schema_version": 1, "stopHookDriver": false }
 ```
 
 ### New slash commands
@@ -409,7 +409,7 @@ Exact format: `status="REVISE"` AND verdict body starts with `unavailable` (case
 
 ## Status
 
-**v3.0.3 — stable (Better Goal; CLI-first redesign carries forward).** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net. **v3.0.1** adds a stale-review-pending detector for legacy driver mode (`stopHookDriver: true`): cursors stuck in `review-pending` >15min with no verdict events auto-transition to `awaiting-manual-approval`, preventing expensive Stop-hook prompt re-rendering when the controller stalls after dispatching a heavy reviewer subagent. **v3.0.2** is a brand rename only — surface labels updated to **Better Goal**; package name, plugin namespace, slash command prefix, and skill directories are unchanged (no migration needed). **v3.0.3** closes a CLI deadlock — `evidence-add` and `achieve` now auto-promote `cursor.status` from `pending → pursuing` on first engagement (was previously only set by v2 driver-mode tag emission), making v3 CLI verbs callable after `goal-resume` or on cursors left from historical v2 advance paths.
+**v3.0.4 — stable (Better Goal; auto-drive restored as default).** All foundational + v2-track work shipped. **v3.0.4** flips `stopHookDriver` default back to `true` — auto-drive (Stop-hook fires continuation on `pursuing`) is the out-of-the-box experience, matching the original product value: install, plan, walk away, come back. The v3 explicit CLI verbs (`evidence-add`, `achieve`, `submit-verdict`, `current`, `review-request`, `as-builtin`) remain fully supported and callable any time as opt-in tools. Hint-only mode (no auto-drive) is opt-in via `stopHookDriver: false`. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net. **v3.0.1** adds a stale-review-pending detector: cursors stuck in `review-pending` >15min with no verdict events auto-transition to `awaiting-manual-approval`, preventing expensive Stop-hook prompt re-rendering when the controller stalls after dispatching a heavy reviewer subagent. **v3.0.2** is a brand rename only — surface labels updated to **Better Goal**; package name, plugin namespace, slash command prefix, and skill directories are unchanged (no migration needed). **v3.0.3** closes a CLI deadlock — `evidence-add` and `achieve` now auto-promote `cursor.status` from `pending → pursuing` on first engagement (was previously only set by v2 driver-mode tag emission), making v3 CLI verbs callable after `goal-resume` or on cursors left from historical v2 advance paths.
 
 ### What's new in the 2.0.x line (summary)
 

@@ -4,6 +4,42 @@ All notable changes to Better Goal (formerly `claude-code-goal-mode`) are docume
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.4 — Auto-drive restored as default (correct out-of-the-box behavior)
+
+User feedback 2026-05-12: the v3.0.0 default of `stopHookDriver: false` (Stop-hook returns null on `pursuing`) was an over-correction. The original product value of goal-mode / Better Goal is "set a verifiable objective, walk away, come back finished" — that requires auto-drive. The silence-loop bug v3.0 was designed to address only manifests when controller agents have memory rules forbidding engagement (a degenerate case), and is already adequately covered by:
+
+- `auto-paused-on-silence` (v2.0.6) — 5 silent turns → auto-pause
+- `stale-review-pending detector` (v3.0.1) — review-pending stale → awaiting-manual-approval
+
+This release flips the default back to `stopHookDriver: true` so the out-of-the-box experience matches the product value: install, plan, walk away, come back. The v3 explicit CLI verbs (`evidence-add`, `achieve`, `submit-verdict`, etc.) remain fully supported and callable any time — they are now opt-in tools, not the default drive mode.
+
+### Changed
+- `engine/plugin-config.mjs`: `stopHookDriver` default `false` → `true`.
+- `engine/doctor.mjs`: renamed check `legacy-stop-hook-driver` → `explicit-cli-mode`. Now warns when `stopHookDriver=false` (rare opt-out), ok when default `true` (auto-drive).
+- README v3 section + Status block updated to reflect new default.
+- Test fixtures updated: `plugin-config.test.mjs`, `stop-hook-v3.test.mjs`, `doctor-v3.test.mjs` adjusted for new default semantics.
+
+### NOT changed
+- v3 explicit CLI verbs (evidence-add, achieve, submit-verdict, current, review-request, as-builtin) — fully supported, callable any time.
+- v3 auto-promote pending→pursuing on first CLI engagement (v3.0.3).
+- v3 stale-review-pending detector (v3.0.1).
+- v2.0.6 auto-pause-on-silence safety net.
+- v2.0.4 escape-hatch + awaiting-manual-approval lifecycle.
+- State schema, event log, reducer, lock.
+- 11 legacy test files migrated to `stopHookDriver=true` fixture in v3.0.0 — still pass (their fixture is now redundant but harmless).
+
+### Migration
+
+If you were running v3.0.0-v3.0.3 with the hint-only default (no config.json), v3.0.4 will start auto-driving. If you prefer hint-only mode (e.g. controller has memory rules forbidding engagement, or you want explicit slash-command drive), create `.claude/goals/active/config.json` with:
+
+```json
+{ "schema_version": 1, "stopHookDriver": false }
+```
+
+That's the only thing that changes for hint-only users. Everything else is identical.
+
+---
+
 ## v3.0.3 — Auto-promote pending → pursuing on first v3 CLI engagement
 
 Closes a deadlock user-reported 2026-05-12 where a cursor stuck in `status=pending` (from historical v2 advance paths or after `/goal-mode:goal-resume`) made v3 CLI verbs (`evidence-add`, `achieve`) un-callable.

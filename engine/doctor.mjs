@@ -535,23 +535,27 @@ export function checkAutoPausedOnSilence(projectRoot) {
 }
 
 /**
- * v3.0: warn when legacy stopHookDriver=true is enabled. v3 default is
- * hint-only (driver disabled — agent drives the goal via explicit CLI verbs).
+ * v3.0.4: warn when stopHookDriver=false is set (explicit-CLI / hint-only mode).
+ * v3.0.4 default is auto-drive (Stop-hook fires continuation prompts on pursuing).
+ * Most users want auto-drive — the "walk away for hours, come back finished"
+ * product value. Explicit opt-out via stopHookDriver=false is for users with
+ * controller agents that have memory rules forbidding engagement, or users
+ * who prefer to drive the cursor manually via /goal-mode:goal-* verbs.
  */
-export function checkLegacyStopHookDriver(projectRoot) {
-  const id = 'legacy-stop-hook-driver';
+export function checkExplicitCliMode(projectRoot) {
+  const id = 'explicit-cli-mode';
   const cfg = loadPluginConfig(projectRoot);
-  if (cfg.stopHookDriver) {
+  if (cfg.stopHookDriver === false) {
     return warn(
       id,
-      'stopHookDriver=true detected — legacy v2 driver enabled. v3 default is hint-only ' +
-        '(agent drives goal via explicit CLI verbs). Disable by removing or setting false in ' +
-        '.claude/goals/active/config.json (per-project) or ' +
-        '~/.claude/plugins/goal-mode/config.json (per-user).',
-      'remove or set "stopHookDriver": false in .claude/goals/active/config.json (per-project) or ~/.claude/plugins/goal-mode/config.json (per-user)',
+      'stopHookDriver=false detected — explicit-CLI mode is on. Stop-hook will not auto-drive; ' +
+        'you must call /goal-mode:goal-* verbs explicitly to advance cursor. Most users want ' +
+        'auto-drive (the default). To re-enable: remove or set true in ' +
+        '.claude/goals/active/config.json (per-project) or ~/.claude/plugins/goal-mode/config.json (per-user).',
+      'remove "stopHookDriver" or set "stopHookDriver": true in .claude/goals/active/config.json (per-project) or ~/.claude/plugins/goal-mode/config.json (per-user)',
     );
   }
-  return ok(id, 'v3 hint-only mode (default)');
+  return ok(id, 'auto-drive (default v3.0.4+)');
 }
 
 export const CHECKS = {
@@ -565,7 +569,7 @@ export const CHECKS = {
   'budget-headroom': checkBudgetHeadroom,
   'awaiting-manual-approval': checkAwaitingManualApproval,
   'auto-paused-on-silence': checkAutoPausedOnSilence,
-  'legacy-stop-hook-driver': checkLegacyStopHookDriver,
+  'explicit-cli-mode': checkExplicitCliMode,
   'event-log-present': checkEventLogPresent,
   'pre-migration-backup-retention': checkPreMigrationBackupRetention,
   'v2-migrated': checkV2Migrated,
