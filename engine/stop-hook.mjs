@@ -89,6 +89,7 @@ import {
   resolvePluginRoot,
 } from './hook-context.mjs';
 import { advanceTallyScan, saveCheckpoint } from './transcript-checkpoint.mjs';
+import { checkStaleReviewPending, STALE_REVIEW_THRESHOLD_MS } from './stale-review-detector.mjs';
 
 // Backwards-compat alias: existing callers expect `readPrompt(name, root)`.
 // Routed through hook-context.mjs for single source of truth.
@@ -257,6 +258,29 @@ export async function runStopHook({ stdin, projectRoot }) {
 
     const tree = loadTree(projectRoot);
     if (!tree) return { exit: 0, stdout: null };
+
+    // v3.0.1: stale-review-pending detector (legacy driver only). When the
+    // cursor has been in review-pending for >15min with no verdict events,
+    // auto-transition to awaiting-manual-approval so Stop-hook stops re-
+    // rendering the (expensive) review prompt. Recovery via /goal-mode:goal-approve.
+    if (cfg.stopHookDriver) {
+      const cursorNode = findNodeById(tree, state.cursor);
+      const staleCheck = checkStaleReviewPending(state, cursorNode, Date.now());
+      if (staleCheck.staled) {
+        process.stderr.write(
+          `[goal-mode] stale-review-pending detected for ${state.cursor} `
+          + `(age ${Math.round(staleCheck.ageMs / 60000)}m, threshold `
+          + `${STALE_REVIEW_THRESHOLD_MS / 60000}m). lifecycle → `
+          + `awaiting-manual-approval. Recovery: /goal-mode:goal-approve ${state.cursor}\n`,
+        );
+        saveState(projectRoot, state);
+        saveTree(projectRoot, tree);
+        // Existing `if (state.lifecycle !== 'pursuing') return null` gate
+        // below would have suppressed prompts on next tick anyway, but we
+        // can short-circuit now since we've already mutated.
+        return { exit: 0, stdout: null };
+      }
+    }
 
     state.budget.iterations.used += 1;
 

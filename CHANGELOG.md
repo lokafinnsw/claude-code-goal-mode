@@ -4,6 +4,25 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.1 — Stale-review-pending detector (legacy driver hardening)
+
+Closes a v2-driver-mode bug pattern user-reported 2026-05-12: after a controller agent dispatches a reviewer subagent (1-5 min Agent() call) and stalls before emitting `<audit-verdict>` tags, the Stop-hook re-renders the same expensive review prompt every tick, burning ~30K tokens per retry.
+
+### Added
+- `engine/stale-review-detector.mjs` — `checkStaleReviewPending(state, cursor, now, thresholdMs?)` detects review-pending cursors with no verdict events for >15 minutes wall-clock, transitions lifecycle to `awaiting-manual-approval` (v2.0.4 escape-hatch landing state). Recovery via `/goal-mode:goal-approve`.
+- Stop-hook integration: stale check runs **only** under `stopHookDriver: true` (legacy mode), keyed on the `review-requested` event timestamp (not silent-turn count, so heavy Agent() dispatches don't false-positive).
+- 8 new tests in `tests/stale-review-detector.test.mjs`.
+
+### Why stale-detector ≠ v2.0.6 silence-counter
+Silence-counter (`consecutive_silent_turns`) treats every turn without engagement tags as silent — including turns where the controller is waiting on a 5-min Agent() dispatch. Stale-detector anchors on the engine's own `review-requested` event timestamp and looks for verdict events after it, so heavy reviews don't trigger false-positive auto-pause.
+
+### Unchanged
+- v3.0 default mode unaffected (Stop-hook returns null on pursuing, so the bug pattern can't occur).
+- State schema, event log, reducer, lock — unchanged.
+- v2.0.4 escape-hatch + v2.0.6 auto-pause-on-silence continue to function alongside.
+
+---
+
 ## v3.0.0 — CLI-first redesign
 
 **Default behaviour changes; opt-out via config.** Stop-hook is hint-only on `lifecycle=pursuing`. Agents drive the loop via explicit CLI verbs.
