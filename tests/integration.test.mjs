@@ -4,11 +4,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { saveState, saveTree } from '../engine/state.mjs';
+import { activeDir } from '../engine/paths.mjs';
 
 function setupProject(tree, state, transcriptText) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-int-'));
   saveTree(root, tree);
   saveState(root, state);
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin the fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.writeFileSync(
+    path.join(activeDir(root), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
   const tPath = path.join(root, 'transcript.jsonl');
   fs.writeFileSync(tPath, transcriptText);
   return { root, tPath };

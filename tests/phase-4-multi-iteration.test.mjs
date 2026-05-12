@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { runStopHook } from '../engine/stop-hook.mjs';
 import * as stateModule from '../engine/state.mjs';
 import { loadState, loadTree, saveState, saveTree } from '../engine/state.mjs';
+import { activeDir } from '../engine/paths.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +11,14 @@ function setupProject(tree, state, transcripts) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-multi-'));
   saveTree(root, tree);
   saveState(root, state);
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin the fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.writeFileSync(
+    path.join(activeDir(root), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
   return { root, transcripts };
 }
 

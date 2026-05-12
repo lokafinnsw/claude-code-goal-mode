@@ -103,7 +103,17 @@ function pursuingState(overrides = {}) {
 }
 
 function mkroot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'adv58-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adv58-'));
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin every fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.mkdirSync(activeDir(root), { recursive: true });
+  fs.writeFileSync(
+    path.join(activeDir(root), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
+  return root;
 }
 
 function tmpJsonl(rows) {
@@ -439,8 +449,9 @@ describe('I — Phase 5: lifecycle command hardening', () => {
   });
 
   it('I5: clearGoal with no active goal is a no-op (returns ok:true, noop:true)', () => {
-    const root = mkroot();
-    // No active dir at all
+    // Skip mkroot's pre-seeded config.json — this test specifically asserts
+    // the "no active dir at all" path of clearGoal.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adv58-i5-'));
     const result = clearGoal(root);
     expect(result.ok).toBe(true);
     expect(result.noop).toBe(true);

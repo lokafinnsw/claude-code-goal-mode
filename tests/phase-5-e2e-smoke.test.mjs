@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { saveTree, loadState, loadTree } from '../engine/state.mjs';
+import { activeDir } from '../engine/paths.mjs';
 import { startGoal } from '../engine/start-goal.mjs';
 import { runStopHook } from '../engine/stop-hook.mjs';
 import { pauseGoal, resumeGoal, clearGoal, abandonGoal } from '../engine/lifecycle-commands.mjs';
@@ -43,6 +44,14 @@ function makeApprovedTree() {
 function setupProject() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase5-e2e-'));
   saveTree(root, makeApprovedTree());
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin the fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.writeFileSync(
+    path.join(activeDir(root), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
   return root;
 }
 

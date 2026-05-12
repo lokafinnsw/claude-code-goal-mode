@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { saveTree, saveState, loadTree, loadState } from '../engine/state.mjs';
+import { activeDir } from '../engine/paths.mjs';
 import { approvePlan } from '../engine/approve-plan-cli.mjs';
 import { startGoal } from '../engine/start-goal.mjs';
 import { runStopHook } from '../engine/stop-hook.mjs';
@@ -68,6 +69,14 @@ function simulateGoalPlanOutput(projectRoot) {
     history: [],
   };
   saveState(projectRoot, state);
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin the fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.writeFileSync(
+    path.join(activeDir(projectRoot), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
 }
 
 function setupProject() {
