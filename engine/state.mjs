@@ -157,13 +157,11 @@ export const GoalStateSchema = z.object({
   ended_at: z.string().datetime().nullable(),
   ended_reason: z.string().nullable(),
   history: z.array(HistoryEntrySchema),
-  // v2.0.6: auto-pause-on-silence — number of consecutive Stop-hook turns
-  // that produced ZERO engagement events (evidence-added, review-requested,
-  // review-verdict, node-blocked, cursor-advanced). When this hits
-  // SILENCE_THRESHOLD (5), the engine auto-transitions lifecycle to `paused`
-  // with a recoverable reason. Resets to 0 on any engagement turn or after
-  // /goal-resume. Optional + default for backward compatibility with v2.0.5
-  // state.json files that lack the field.
+  // v2.0.6 (deprecated v3.0.7): auto-pause-on-silence was a false-positive-
+  // prone heuristic removed in v3.0.7. The field is kept as optional with
+  // default 0 so old state.json files (which have it written) continue to
+  // load through zod validation. Engine no longer reads or writes this
+  // field — triple budget is the sole automatic safety net.
   consecutive_silent_turns: z.number().int().nonnegative().default(0),
 });
 

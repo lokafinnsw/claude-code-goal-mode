@@ -114,8 +114,9 @@ export function resumeGoal(projectRoot) {
   const now = new Date().toISOString();
   state.lifecycle = 'pursuing';
   state.paused_at = null;
-  // v2.0.6: reset silent-turn counter on resume so we don't immediately
-  // re-trigger auto-pause if the agent emits another silent turn first.
+  // v3.0.7: auto-pause-on-silence removed. We still write 0 here so that
+  // a future code path inspecting old state.json snapshots sees a clean
+  // counter on resume — but the field is no longer consulted by the engine.
   state.consecutive_silent_turns = 0;
   state.history.push({
     ts: now,

@@ -4,6 +4,35 @@ All notable changes to Better Goal (formerly `claude-code-goal-mode`) are docume
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.7 — Remove auto-pause-on-silence
+
+The v2.0.6 auto-pause-on-silence detector was a false-positive-prone heuristic that kept firing on legitimate autonomous controller work. Every patch (v3.0.5 threshold raise 5→20, v3.0.6 tool_use as engagement) reduced false-positives but never eliminated them. The detector was originally added for the degenerate "controller refuses to engage" case, but for normal autonomous runs (which is the product's actual use case), it just paused goals that were making progress.
+
+**Removed entirely.** Triple budget (iterations / tokens / wall-clock) is the sole automatic safety net — it catches the real token-bleed case the silence detector was trying to handle, without any false-positives on legitimate exploration phases.
+
+### Removed
+- `engine/stop-hook.mjs`: the entire auto-pause-on-silence block (ENGAGEMENT_EVENTS, SILENCE_THRESHOLD, consecutive_silent_turns increment, lifecycle=paused transition).
+- `engine/transcript-checkpoint.mjs`: `tool_use_count` field and counting logic (only used by removed engagement check).
+- `engine/plugin-config.mjs`: `silenceThreshold` default and field reference.
+- `engine/doctor.mjs`: `checkAutoPausedOnSilence` function and registry entry.
+- `engine/session-start-hook.mjs`: auto-paused-on-silence recovery hint branch.
+- `prompts/auto-paused-on-silence.md`: deleted.
+- `tests/auto-pause-on-silence.test.mjs`: 11 tests deleted.
+- `tests/v3-tool-use-engagement.test.mjs`: 7 tests deleted (engagement signal no longer exists).
+- README + docs + skills: silence-detector mentions removed.
+
+### Kept (backward-compat)
+- `consecutive_silent_turns` field in state.json schema stays as optional with default 0. Old state files load fine; engine just never updates the field.
+
+### Triple budget unchanged
+- `iterations.max`, `tokens.max`, `wallclock.max_seconds` continue to enforce hard ceilings.
+- Budget-limited lifecycle transition unchanged.
+
+### Stale-review-pending detector (v3.0.1) unchanged
+- Different signal (engine event timestamps, not turn counting). Stays.
+
+---
+
 ## v3.0.6 — Smart silence detection (tool_use counts as engagement)
 
 Closes a false-positive in auto-pause-on-silence (v2.0.6) reported by user 2026-05-12 on mancelot autonomous run.

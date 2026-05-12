@@ -62,32 +62,10 @@ export async function runSessionStartHook({ stdin, projectRoot }) {
         },
       };
     }
-    // v2.0.6: surface auto-paused-on-silence state distinctly so the user
-    // sees it when opening a new session. Regular user-initiated /goal-pause
-    // still falls through to the null-stdout passthrough (user knows they
-    // paused it).
+    // v3.0.7: auto-paused-on-silence recovery branch removed (feature
+    // removed entirely). User-initiated /goal-pause falls through to the
+    // null-stdout passthrough (user knows they paused it).
     if (state.lifecycle === 'paused') {
-      const lastPause = [...(state.history ?? [])]
-        .reverse()
-        .find((h) => h.event === 'paused');
-      if (lastPause?.payload?.reason === 'auto-paused-on-silence') {
-        const silent = lastPause.payload?.silent_turns ?? '?';
-        return {
-          exit: 0,
-          stdout: {
-            hookSpecificOutput: {
-              hookEventName: 'SessionStart',
-              additionalContext:
-                `⏸ goal-mode: active goal "${state.goal_id}" was AUTO-PAUSED after ${silent} silent turns (cursor=${state.cursor}). The controller agent emitted no goal-mode tags for ${silent} consecutive Stop-hook ticks — engine paused to stop the token bleed.\n\n`
-                + `Recovery:\n`
-                + `  • Resume work: \`/goal-mode:goal-resume\` (silent counter resets to 0)\n`
-                + `  • Abandon goal: \`/goal-mode:goal-abandon --reason "..."\`\n`
-                + `  • Wipe and replan: \`/goal-mode:goal-clear --archive\`\n\n`
-                + `Run \`/goal-mode:goal-doctor\` for full diagnostics.`,
-            },
-          },
-        };
-      }
       return { exit: 0, stdout: null };
     }
     if (state.lifecycle !== 'pursuing') return { exit: 0, stdout: null };

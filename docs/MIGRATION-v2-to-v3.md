@@ -79,7 +79,7 @@ Verify with `/goal-mode:goal-doctor` — `explicit-cli-mode: warn` confirms hint
 All v2 tag-emission semantics work as before:
 - Tag parsing in `engine/parse-tags.mjs`
 - Continuation prompt injection in `engine/stop-hook.mjs`
-- Auto-pause-on-silence safety net (v2.0.6) still fires after 5 silent turns
+- Triple budget (iterations / tokens / wall-clock) is the sole automatic safety net (v3.0.7 removed the auto-pause-on-silence heuristic)
 - Reviewer-independence guard still enforced via `scannedAgents` Set
 
 ## Bridging to built-in /goal
@@ -116,4 +116,4 @@ Your state files remain valid for v2.0.6 — no data loss.
 - **Do I need to migrate tree.json or state.json?** No. Schema is unchanged (`schema_version: 2` continues).
 - **Will tag emission stop working?** Tag emission keeps working in the v3.0.4 default (auto-drive). It only stops being parsed if you opt into hint-only mode (`stopHookDriver: false`), in which case you must drive via CLI verbs.
 - **Can I run both v3 CLI verbs AND tags?** Yes — the CLI verbs always work regardless of mode. Tags are parsed only when Stop-hook auto-drives (the default).
-- **Does auto-pause-on-silence still apply?** Yes — under `stopHookDriver: true` (the default), after 5 consecutive Stop-hook turns with zero engagement tags the goal auto-pauses with a recoverable reason. The stale-review-pending detector (v3.0.1) also still applies. Both safety nets continue to protect against runaway token spend.
+- **Does auto-pause-on-silence still apply?** No — removed in v3.0.7. It was a false-positive-prone heuristic that kept firing on legitimate autonomous-controller work. Triple budget (iterations / tokens / wall-clock) is the sole automatic safety net against runaway token spend. The stale-review-pending detector (v3.0.1) is unrelated (engine-event timestamps, not turn counting) and continues to apply.

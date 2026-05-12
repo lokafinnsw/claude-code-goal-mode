@@ -22,7 +22,7 @@ describe('loadPluginConfig', () => {
     const homeDir = mkTmp();
     const cfg = loadPluginConfig(root, { homeDir });
     expect(cfg.stopHookDriver).toBe(true);  // v3.0.4: auto-drive default
-    expect(cfg.silenceThreshold).toBe(20);  // v3.0.5: raised from 5 → 20
+    expect(cfg.silenceThreshold).toBeUndefined();  // v3.0.7: removed
     expect(cfg.schema_version).toBe(1);
   });
 
@@ -36,7 +36,7 @@ describe('loadPluginConfig', () => {
     );
     const cfg = loadPluginConfig(root, { homeDir });
     expect(cfg.stopHookDriver).toBe(true);
-    expect(cfg.silenceThreshold).toBe(20);  // v3.0.5 default preserved
+    expect(cfg.silenceThreshold).toBeUndefined();  // v3.0.7: removed
   });
 
   it('reads per-project config when present (no user config)', () => {
@@ -98,6 +98,9 @@ describe('loadPluginConfig', () => {
   });
 
   it('partial config merges with defaults (no replace)', () => {
+    // v3.0.7: silenceThreshold was removed as a known field; loader still
+    // preserves unknown keys verbatim, so a stale config like
+    // `{ silenceThreshold: 10 }` is round-tripped without affecting defaults.
     const root = mkTmp();
     const homeDir = mkTmp();
     fs.mkdirSync(path.join(root, '.claude', 'goals', 'active'), { recursive: true });
@@ -106,7 +109,7 @@ describe('loadPluginConfig', () => {
       JSON.stringify({ silenceThreshold: 10 }),
     );
     const cfg = loadPluginConfig(root, { homeDir });
-    expect(cfg.silenceThreshold).toBe(10);
+    expect(cfg.silenceThreshold).toBe(10);  // forward-compat preserves unknown key
     expect(cfg.stopHookDriver).toBe(true);  // v3.0.4 default preserved
   });
 
