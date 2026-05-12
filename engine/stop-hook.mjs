@@ -69,6 +69,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadState, loadTree, saveState, saveTree } from './state.mjs';
+import { loadPluginConfig } from './plugin-config.mjs';
 import { readLastAssistantText, scanAgentInvocations } from './transcript.mjs';
 import { parseTags } from './parse-tags.mjs';
 import { applyMutations } from './apply-mutations.mjs';
@@ -239,6 +240,18 @@ export async function runStopHook({ stdin, projectRoot }) {
         + `To prevent auto-rebind, pause the goal with /goal-mode:goal-pause.\n`,
       );
       // Fall through to normal pursuing path.
+    }
+    // v3.0: hint-only mode. When stopHookDriver is false (the v3 default),
+    // the Stop-hook returns null stdout on lifecycle=pursuing, breaking the
+    // driver-as-engine antipattern. The agent drives the goal via explicit
+    // CLI verbs (evidence-add, achieve, submit-verdict). Legacy v2 driver
+    // behaviour is preserved when stopHookDriver=true in plugin config.
+    // Non-pursuing lifecycles (paused, awaiting-manual-approval, blocked,
+    // terminal) still fall through to the existing render paths so
+    // recovery hints continue to surface.
+    const cfg = loadPluginConfig(projectRoot);
+    if (state.lifecycle === 'pursuing' && !cfg.stopHookDriver) {
+      return { exit: 0, stdout: null };
     }
     if (state.lifecycle !== 'pursuing') return { exit: 0, stdout: null };
 
