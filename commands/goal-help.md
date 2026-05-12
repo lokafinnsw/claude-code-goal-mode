@@ -4,6 +4,28 @@ description: "Explain Goal Mode plugin and available commands"
 
 # Goal Mode plugin help
 
+## v3 Explicit CLI Verbs (recommended workflow)
+
+In v3.0+, the Stop hook is hint-only on `lifecycle=pursuing` by default. Drive the goal explicitly:
+
+| Command | Purpose |
+|---|---|
+| `/goal-mode:goal-current` | Show cursor task + AC coverage |
+| `/goal-mode:goal-evidence-add` | Add evidence for a criterion |
+| `/goal-mode:goal-achieve` | Claim achievement (advances cursor or → review-pending) |
+| `/goal-mode:goal-review-request` | Print reviewer dispatch template |
+| `/goal-mode:goal-submit-verdict` | Record reviewer verdict (GO/NOGO/REVISE) |
+| `/goal-mode:goal-as-builtin` | Emit text for piping into built-in `/goal` |
+
+**Recommended workflow:**
+1. `/goal-mode:goal-current` — see the task.
+2. Do the work in normal Claude Code mode.
+3. For each AC: `/goal-mode:goal-evidence-add --criterion N --file path[:line] --note "..."`.
+4. `/goal-mode:goal-achieve` — claim achievement.
+5. If `review-pending`: `/goal-mode:goal-review-request` → dispatch reviewers via `Agent({subagent_type, prompt})` → `/goal-mode:goal-submit-verdict` per verdict.
+
+Legacy v2 tag-emission workflow remains supported under `stopHookDriver: true` config (see [`docs/MIGRATION-v2-to-v3.md`]).
+
 ## Commands
 
 | Command | Description |

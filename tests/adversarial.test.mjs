@@ -21,6 +21,7 @@ import {
   GoalTreeSchema, GoalNodeSchema, GoalStateSchema,
   loadState, saveState, loadTree, saveTree,
 } from '../engine/state.mjs';
+import { activeDir as activeDirOf } from '../engine/paths.mjs';
 import { walkLeafTasks, findNodeById, nextPendingTaskAfter } from '../engine/traversal.mjs';
 import { parseTags } from '../engine/parse-tags.mjs';
 import { applyMutations } from '../engine/apply-mutations.mjs';
@@ -31,7 +32,17 @@ import { saveState as saveStateFn } from '../engine/state.mjs';
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function tmpdir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'goal-adv-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-adv-'));
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin every fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.mkdirSync(activeDirOf(root), { recursive: true });
+  fs.writeFileSync(
+    path.join(activeDirOf(root), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
+  return root;
 }
 
 function makeTaskNode(overrides = {}) {

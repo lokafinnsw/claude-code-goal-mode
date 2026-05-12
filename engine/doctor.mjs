@@ -34,6 +34,7 @@ import {
 import { CURRENT_SCHEMA_VERSION } from './migrations.mjs';
 import { findNodeById } from './traversal.mjs';
 import { readEvents, eventsPath } from './event-log.mjs';
+import { loadPluginConfig } from './plugin-config.mjs';
 import semver from 'semver';
 
 // Public schema -----------------------------------------------------------
@@ -533,6 +534,26 @@ export function checkAutoPausedOnSilence(projectRoot) {
   );
 }
 
+/**
+ * v3.0: warn when legacy stopHookDriver=true is enabled. v3 default is
+ * hint-only (driver disabled — agent drives the goal via explicit CLI verbs).
+ */
+export function checkLegacyStopHookDriver(projectRoot) {
+  const id = 'legacy-stop-hook-driver';
+  const cfg = loadPluginConfig(projectRoot);
+  if (cfg.stopHookDriver) {
+    return warn(
+      id,
+      'stopHookDriver=true detected — legacy v2 driver enabled. v3 default is hint-only ' +
+        '(agent drives goal via explicit CLI verbs). Disable by removing or setting false in ' +
+        '.claude/goals/active/config.json (per-project) or ' +
+        '~/.claude/plugins/goal-mode/config.json (per-user).',
+      'remove or set "stopHookDriver": false in .claude/goals/active/config.json (per-project) or ~/.claude/plugins/goal-mode/config.json (per-user)',
+    );
+  }
+  return ok(id, 'v3 hint-only mode (default)');
+}
+
 export const CHECKS = {
   'state-loadable': checkStateLoadable,
   'tree-loadable': checkTreeLoadable,
@@ -544,6 +565,7 @@ export const CHECKS = {
   'budget-headroom': checkBudgetHeadroom,
   'awaiting-manual-approval': checkAwaitingManualApproval,
   'auto-paused-on-silence': checkAutoPausedOnSilence,
+  'legacy-stop-hook-driver': checkLegacyStopHookDriver,
   'event-log-present': checkEventLogPresent,
   'pre-migration-backup-retention': checkPreMigrationBackupRetention,
   'v2-migrated': checkV2Migrated,

@@ -12,6 +12,37 @@
   <a href="#status"><img src="https://img.shields.io/github/v/tag/lokafinnsw/claude-code-goal-mode?label=release&color=brightgreen" alt="Latest release"></a>
 </p>
 
+## What's new in v3.0
+
+**v3.0 is a workflow redesign, not a rewrite.** Every v2.x state file loads unchanged. The plan-tree schema, event log, reviewer-independence guard, triple budget, and lock protocol are preserved.
+
+What changed:
+
+| Before (v2) | After (v3) |
+|---|---|
+| Stop-hook injects continuation prompt every turn on `lifecycle=pursuing` | Stop-hook returns `null` stdout on `pursuing` by default |
+| Agent emits XML tags in reply (`<evidence>`, `<task-status>`, ...) | Agent calls explicit slash commands |
+| Cursor advances via tag parsing in Stop-hook | Cursor advances via CLI verb (`achieve`, `submit-verdict`) |
+| Driver and agent loop tightly coupled (silence loops possible) | Agent owns the loop; goal-mode is a structured tracker |
+
+Legacy v2 driver remains available as opt-in via `.claude/goals/active/config.json` (per-project) or `~/.claude/plugins/goal-mode/config.json` (per-user):
+```json
+{ "schema_version": 1, "stopHookDriver": true }
+```
+
+### New slash commands
+
+| Command | Purpose |
+|---|---|
+| `/goal-mode:goal-current` | Read-only cursor inspector |
+| `/goal-mode:goal-evidence-add` | Write evidence to cursor task |
+| `/goal-mode:goal-achieve` | Claim task achievement |
+| `/goal-mode:goal-review-request` | Print reviewer dispatch template |
+| `/goal-mode:goal-submit-verdict` | Record reviewer verdict (with independence enforcement) |
+| `/goal-mode:goal-as-builtin` | Emit text for piping into Claude Code's built-in `/goal` |
+
+Migration is automatic: existing v2 goals continue to work; the new default takes effect after `bash install.sh + restart Claude Desktop`. See [docs/MIGRATION-v2-to-v3.md](docs/MIGRATION-v2-to-v3.md) for full migration guide.
+
 ---
 
 ## TL;DR
@@ -374,7 +405,7 @@ Exact format: `status="REVISE"` AND verdict body starts with `unavailable` (case
 
 ## Status
 
-**v2.0.6 — stable.** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net.
+**v3.0.0 — stable (CLI-first redesign).** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net.
 
 ### What's new in the 2.0.x line (summary)
 

@@ -33,7 +33,17 @@ const REPO = path.resolve(new URL('..', import.meta.url).pathname);
 // Shared fixtures --------------------------------------------------------
 
 function mkRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'v121-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v121-'));
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin every fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.mkdirSync(activeDir(root), { recursive: true });
+  fs.writeFileSync(
+    path.join(activeDir(root), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
+  return root;
 }
 
 function makeTree() {

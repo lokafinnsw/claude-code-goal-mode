@@ -112,6 +112,14 @@ function setupProject(state, tree) {
   fs.mkdirSync(activeDir(root), { recursive: true });
   saveTree(root, tree);
   saveState(root, state);
+  // v3.0: these tests exercise the legacy Stop-hook driver path
+  // (continuation injection on lifecycle=pursuing). Pin the fixture
+  // to stopHookDriver=true so the v3 default short-circuit (null
+  // stdout on pursuing) doesn't fire.
+  fs.writeFileSync(
+    path.join(activeDir(root), 'config.json'),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+  );
   fs.writeFileSync(notesPath(root), '');
   return root;
 }
