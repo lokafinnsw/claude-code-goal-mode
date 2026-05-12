@@ -156,7 +156,21 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
           cursorNode.status = 'achieved';
           history.push({ ts, iteration: state.budget.iterations.used, event: 'cursor-advanced', node_id: cursorNode.id, payload: { from: 'achieved' } });
           const nextTask = nextPendingTaskAfter(tree, cursorNode.id);
-          state.cursor = nextTask ? nextTask.id : cursorNode.id;
+          if (nextTask) {
+            state.cursor = nextTask.id;
+            // v3.0: promote new cursor task to 'pursuing' on advance. Pre-v3
+            // this happened implicitly when the agent emitted
+            // <task-status>pursuing</task-status> on its first turn working on
+            // the new task (legacy Stop-hook driver path). v3 explicit CLI
+            // verbs (evidence-add, achieve) require cursor.status ∈
+            // {pursuing, review-pending}, so we make the promotion explicit at
+            // advance time. Idempotent for legacy callers: a redundant
+            // <task-status>pursuing</> emission on the next turn passes through
+            // the pursuing-handler as a no-op.
+            nextTask.status = 'pursuing';
+          } else {
+            state.cursor = cursorNode.id;
+          }
         } else {
           cursorNode.status = 'review-pending';
           history.push({ ts, iteration: state.budget.iterations.used, event: 'review-requested', node_id: cursorNode.id, payload: { agents: cursorNode.review } });
@@ -341,7 +355,13 @@ export function applyMutations(treeIn, stateIn, tags, ts, opts = {}) {
       cursorNode.status = 'achieved';
       history.push({ ts, iteration: state.budget.iterations.used, event: 'cursor-advanced', node_id: cursorNode.id, payload: { from: 'review-go' } });
       const nextTask = nextPendingTaskAfter(tree, cursorNode.id);
-      state.cursor = nextTask ? nextTask.id : cursorNode.id;
+      if (nextTask) {
+        state.cursor = nextTask.id;
+        // v3.0: see comment on the symmetric empty-review path above.
+        nextTask.status = 'pursuing';
+      } else {
+        state.cursor = cursorNode.id;
+      }
     }
   }
 

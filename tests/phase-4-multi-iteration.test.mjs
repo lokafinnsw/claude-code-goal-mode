@@ -136,7 +136,9 @@ describe('Phase 4 multi-iteration end-to-end', () => {
     expect(state.budget.iterations.used).toBe(2);
     expect(state.cursor).toBe('s.t2');
     expect(tree.root.children[0].status).toBe('achieved');
-    expect(tree.root.children[1].status).toBe('pending');
+    // v3.0: new cursor task is promoted to 'pursuing' on advance (was 'pending'
+    // pre-v3 — relied on agent emitting <task-status>pursuing</> on next turn).
+    expect(tree.root.children[1].status).toBe('pursuing');
 
     // Turn 3: t2 partial evidence.
     const t3Path = writeTranscript(root, 'iter3',
