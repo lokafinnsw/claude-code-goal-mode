@@ -21,7 +21,7 @@ describe('loadPluginConfig', () => {
     const root = mkTmp();
     const homeDir = mkTmp();
     const cfg = loadPluginConfig(root, { homeDir });
-    expect(cfg.stopHookDriver).toBe(false);
+    expect(cfg.stopHookDriver).toBe(true);  // v3.0.4: auto-drive default
     expect(cfg.silenceThreshold).toBe(5);
     expect(cfg.schema_version).toBe(1);
   });
@@ -89,11 +89,11 @@ describe('loadPluginConfig', () => {
       'not valid json{{{',
     );
     const cfg = loadPluginConfig(root, { homeDir });
-    expect(cfg.stopHookDriver).toBe(false);  // default preserved
+    expect(cfg.stopHookDriver).toBe(true);  // v3.0.4 default preserved
   });
 
   it('exposes frozen PLUGIN_CONFIG_DEFAULTS', () => {
-    expect(PLUGIN_CONFIG_DEFAULTS.stopHookDriver).toBe(false);
+    expect(PLUGIN_CONFIG_DEFAULTS.stopHookDriver).toBe(true);  // v3.0.4
     expect(Object.isFrozen(PLUGIN_CONFIG_DEFAULTS)).toBe(true);
   });
 
@@ -107,6 +107,18 @@ describe('loadPluginConfig', () => {
     );
     const cfg = loadPluginConfig(root, { homeDir });
     expect(cfg.silenceThreshold).toBe(10);
-    expect(cfg.stopHookDriver).toBe(false);  // default preserved
+    expect(cfg.stopHookDriver).toBe(true);  // v3.0.4 default preserved
+  });
+
+  it('explicit stopHookDriver=false in project config overrides default (opt-in hint-only)', () => {
+    const root = mkTmp();
+    const homeDir = mkTmp();
+    fs.mkdirSync(path.join(root, '.claude', 'goals', 'active'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, '.claude', 'goals', 'active', 'config.json'),
+      JSON.stringify({ schema_version: 1, stopHookDriver: false }),
+    );
+    const cfg = loadPluginConfig(root, { homeDir });
+    expect(cfg.stopHookDriver).toBe(false);  // explicit opt-out from default
   });
 });
