@@ -405,7 +405,7 @@ Exact format: `status="REVISE"` AND verdict body starts with `unavailable` (case
 
 ## Status
 
-**v3.0.0 — stable (CLI-first redesign).** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net.
+**v3.0.1 — stable (CLI-first redesign).** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net. **v3.0.1** adds a stale-review-pending detector for legacy driver mode (`stopHookDriver: true`): cursors stuck in `review-pending` >15min with no verdict events auto-transition to `awaiting-manual-approval`, preventing expensive Stop-hook prompt re-rendering when the controller stalls after dispatching a heavy reviewer subagent.
 
 ### What's new in the 2.0.x line (summary)
 
