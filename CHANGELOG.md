@@ -4,6 +4,55 @@ All notable changes to claude-code-goal-mode are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.0 — CLI-first redesign
+
+**Default behaviour changes; opt-out via config.** Stop-hook is hint-only on `lifecycle=pursuing`. Agents drive the loop via explicit CLI verbs.
+
+### Added
+- `engine/evidence-add.mjs` + `evidence-add-cli.mjs` + `/goal-mode:goal-evidence-add`
+- `engine/achieve.mjs` + `achieve-cli.mjs` + `/goal-mode:goal-achieve`
+- `engine/submit-verdict.mjs` + `submit-verdict-cli.mjs` + `/goal-mode:goal-submit-verdict`
+- `engine/current.mjs` + `current-cli.mjs` + `/goal-mode:goal-current`
+- `engine/review-request.mjs` + `review-request-cli.mjs` + `/goal-mode:goal-review-request`
+- `scripts/as-builtin.sh` + `/goal-mode:goal-as-builtin` — bridge to built-in `/goal`
+- `engine/plugin-config.mjs` — per-user + per-project config layering
+- `doctor` check `legacy-stop-hook-driver` (warns when `stopHookDriver=true`)
+- End-to-end integration test for v3 CLI flow (`tests/v3-cli-end-to-end.test.mjs`)
+- Engine: explicit cursor-task `'pursuing'` promotion on advance (closes pre-v3 implicit-promotion gap that broke v3 CLI verbs)
+
+### Changed
+- Stop-hook returns `null` stdout on `lifecycle=pursuing` by default (was: render continuation.md every turn).
+- `using-goal-mode` skill updated to v3 workflow (explicit CLI), legacy tag-emission flagged as fallback.
+- `goal-mode-tag-discipline` skill flagged as optional/legacy.
+- 11 legacy regression test files migrated to `stopHookDriver=true` fixture (preserves v2 driver coverage).
+- README + CHANGELOG + new MIGRATION guide reflect the workflow change.
+
+### Unchanged (carry-over from v2.0.6)
+- State schema (`schema_version: 2`) — v2 state files load and work unchanged.
+- Event log + reducer (ADR-0001).
+- File locking (ADR-0002).
+- Reviewer-independence guard (`scannedAgents` Set, transcript scan).
+- Triple budget enforcement.
+- Escape-hatch detector + `awaiting-manual-approval` lifecycle.
+- Auto-pause-on-silence (v2.0.6) — still active under `stopHookDriver=true`.
+
+### Migration
+
+v2.x → v3.0 is a no-op for state files. After `bash install.sh && restart Claude Desktop`:
+- **Default:** hint-only Stop-hook. Run `/goal-mode:goal-current` to see the task; use explicit CLI verbs to advance.
+- **Legacy mode:** create `.claude/goals/active/config.json` with `{"schema_version": 1, "stopHookDriver": true}` to keep v2 behaviour.
+
+See [docs/MIGRATION-v2-to-v3.md](docs/MIGRATION-v2-to-v3.md) for detailed migration steps.
+
+### Stats
+
+- 1002+ tests passing (≈30 new v3 tests + 11 legacy test files migrated to driver-on fixture).
+- ~10 new files in `engine/`, `scripts/`, `commands/`, `tests/`, `docs/`.
+- Zero schema changes.
+- Zero breaking API changes for state files.
+
+---
+
 ## [2.0.6] — 2026-05-12
 
 **Auto-pause-on-silence — token-bleed safety net.**
