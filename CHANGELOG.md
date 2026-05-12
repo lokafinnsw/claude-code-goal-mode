@@ -1,8 +1,30 @@
 # Changelog
 
-All notable changes to claude-code-goal-mode are documented in this file.
+All notable changes to Better Goal (formerly `claude-code-goal-mode`) are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## v3.0.2 — Brand rename to "Better Goal" (cosmetic)
+
+Surface rename only. Zero code changes, zero behaviour changes.
+
+### Changed
+- README title `claude-code-goal-mode` → **Better Goal**.
+- `marketplace.json` / `plugin.json` descriptions updated to "Better Goal — …".
+- CHANGELOG header line updated.
+- Version bump 3.0.1 → 3.0.2 in `package.json`, `marketplace.json`, `plugin.json`.
+
+### NOT changed (deliberately, to avoid breaking users)
+- npm package `name` (`claude-code-goal-mode`).
+- Plugin namespace (`goal-mode`).
+- Slash command prefix (`/goal-mode:goal-*`).
+- Skill directory names (`using-goal-mode`, `goal-mode-tag-discipline`).
+- Plugin install path (`~/.claude/plugins/cache/goal-mode/goal-mode/`).
+- GitHub repo URL (`lokafinnsw/claude-code-goal-mode`) — kept stable; can be renamed via GitHub UI later, GitHub auto-redirects from old URL for 90 days.
+
+If a future major release (v4.0) does a hard CLI rename, that will be a coordinated breaking change with a migration guide.
+
+---
 
 ## v3.0.1 — Stale-review-pending detector (legacy driver hardening)
 

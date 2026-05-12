@@ -1,9 +1,13 @@
-<h1 align="center">claude-code-goal-mode</h1>
+<h1 align="center">Better Goal</h1>
 
 <p align="center">
-  <strong>A <code>/goal</code> command for Claude Code.</strong>
+  <strong>A <code>/goal</code> command for Claude Code — better.</strong>
   <br>
   Long-horizon autonomous mode driven by a hierarchical plan-tree, evidence-mapped acceptance criteria, declarative review-gates, and a triple budget.
+</p>
+
+<p align="center">
+  <sub>Repo identifier: <code>claude-code-goal-mode</code> · Plugin namespace: <code>goal-mode</code> · Slash prefix: <code>/goal-mode:*</code></sub>
 </p>
 
 <p align="center">
@@ -405,7 +409,7 @@ Exact format: `status="REVISE"` AND verdict body starts with `unavailable` (case
 
 ## Status
 
-**v3.0.1 — stable (CLI-first redesign).** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net. **v3.0.1** adds a stale-review-pending detector for legacy driver mode (`stopHookDriver: true`): cursors stuck in `review-pending` >15min with no verdict events auto-transition to `awaiting-manual-approval`, preventing expensive Stop-hook prompt re-rendering when the controller stalls after dispatching a heavy reviewer subagent.
+**v3.0.2 — stable (rebranded to Better Goal; CLI-first redesign carries forward).** All foundational + v2-track work shipped. **Auto-pause-on-silence (v2.0.6) prevents controller-not-engaging spam loops** — when N=5 consecutive Stop-hook turns produce zero goal-mode tags, lifecycle auto-transitions to `paused` with a recoverable reason. Token-bleed safety net. **v3.0.1** adds a stale-review-pending detector for legacy driver mode (`stopHookDriver: true`): cursors stuck in `review-pending` >15min with no verdict events auto-transition to `awaiting-manual-approval`, preventing expensive Stop-hook prompt re-rendering when the controller stalls after dispatching a heavy reviewer subagent. **v3.0.2** is a brand rename only — surface labels updated to **Better Goal**; package name, plugin namespace, slash command prefix, and skill directories are unchanged (no migration needed).
 
 ### What's new in the 2.0.x line (summary)
 
