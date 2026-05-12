@@ -34,6 +34,7 @@ import {
 import { CURRENT_SCHEMA_VERSION } from './migrations.mjs';
 import { findNodeById } from './traversal.mjs';
 import { readEvents, eventsPath } from './event-log.mjs';
+import { loadPluginConfig } from './plugin-config.mjs';
 import semver from 'semver';
 
 // Public schema -----------------------------------------------------------
@@ -533,6 +534,43 @@ export function checkAutoPausedOnSilence(projectRoot) {
   );
 }
 
+/**
+ * v3.0: warn when legacy stopHookDriver=true is enabled. v3 default is
+ * hint-only (driver disabled — agent drives the goal via explicit CLI verbs).
+ */
+export function checkLegacyStopHookDriver(projectRoot) {
+  const cfg = loadPluginConfig(projectRoot);
+  if (cfg.stopHookDriver) {
+    return {
+      name: 'legacy-stop-hook-driver',
+      status: 'warn',
+      message:
+        'stopHookDriver=true detected — legacy v2 driver enabled. v3 default is hint-only ' +
+        '(agent drives goal via explicit CLI verbs). Disable by removing or setting false in ' +
+        '.claude/goals/active/config.json (per-project) or ' +
+        '~/.claude/plugins/goal-mode/config.json (per-user).',
+    };
+  }
+  return { name: 'legacy-stop-hook-driver', status: 'ok', message: 'v3 hint-only mode (default)' };
+}
+
+// Adapter: checkLegacyStopHookDriver returns the v3-style {name,status,message}
+// shape, but the orchestrator validates against DiagnosticCheckSchema
+// ({id,severity,status,message,fix}). Wrap in registry to bridge the shapes
+// without mutating the verbatim v3 function (which is exercised directly by
+// tests/doctor-v3.test.mjs).
+function checkLegacyStopHookDriverForRegistry(projectRoot) {
+  const r = checkLegacyStopHookDriver(projectRoot);
+  if (r.status === 'warn') {
+    return warn(
+      r.name,
+      r.message,
+      'remove or set "stopHookDriver": false in .claude/goals/active/config.json (per-project) or ~/.claude/plugins/goal-mode/config.json (per-user)',
+    );
+  }
+  return ok(r.name, r.message);
+}
+
 export const CHECKS = {
   'state-loadable': checkStateLoadable,
   'tree-loadable': checkTreeLoadable,
@@ -544,6 +582,7 @@ export const CHECKS = {
   'budget-headroom': checkBudgetHeadroom,
   'awaiting-manual-approval': checkAwaitingManualApproval,
   'auto-paused-on-silence': checkAutoPausedOnSilence,
+  'legacy-stop-hook-driver': checkLegacyStopHookDriverForRegistry,
   'event-log-present': checkEventLogPresent,
   'pre-migration-backup-retention': checkPreMigrationBackupRetention,
   'v2-migrated': checkV2Migrated,
