@@ -4,6 +4,35 @@ All notable changes to Better Goal (formerly `claude-code-goal-mode`) are docume
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.8 — `/goal-mode:goal-extend` CLI (bump budget on active or budget-limited goal)
+
+Closes a real feature gap: when a goal hits its triple-budget ceiling mid-run (e.g. 91/158 tasks done at 60M token cap), the only recovery pre-v3.0.8 was `/goal-clear --archive` + re-plan from scratch. That loses cursor, history, evidence, audits, and tree shape — destructive when the existing plan is still the right plan and the user just wants more headroom. v3.0.8 adds `goal-extend` to bump limits in-place and transition `budget-limited → pursuing` so work continues on the same plan.
+
+### Added
+- `engine/goal-extend.mjs` — pure-function `extendBudget(projectRoot, opts)` with `withLockSync` wrap and explicit preconditions (lifecycle ∈ {pursuing, budget-limited}; at least one of tokens/iter/time; new max ≥ already-consumed used).
+- `engine/goal-extend-cli.mjs` — CLI with delta-vs-absolute parsing for tokens (k/m suffixes), iter (bare int), and time (h/m/d/s suffixes).
+- `scripts/goal-extend.sh` — bash shim.
+- `commands/goal-extend.md` — slash command markdown.
+- `tests/goal-extend.test.mjs` — 33 tests covering parse helpers + core + lifecycle transitions + precondition rejects + CLI exit codes.
+- `'budget-extended'` history event kind (added to `KNOWN_HISTORY_EVENTS` in `engine/state.mjs`).
+
+### Usage
+
+```
+/goal-mode:goal-extend --tokens +50M --time +4h
+/goal-mode:goal-extend --tokens 150M
+/goal-mode:goal-extend --iter +1000
+/goal-mode:goal-extend --tokens +50M --iter +500 --time +2h
+```
+
+Delta mode (`+` prefix) adds to current max; absolute mode (bare value) replaces it. On `budget-limited` lifecycle, auto-transitions back to `pursuing` and clears `ended_at` / `ended_reason` — Stop hook then resumes firing continuation prompts. Rejects from any other lifecycle (`paused` / `achieved` / `unmet` / `draft` / `approved` / `awaiting-manual-approval`); those have dedicated recovery paths.
+
+### Triple budget unchanged
+
+Hard ceilings still enforced exactly as before. `goal-extend` just lifts the ceiling explicitly when the user wants more headroom. No silent expansion, no auto-extend on budget-exhaustion — the user must opt in by calling this command.
+
+---
+
 ## v3.0.7 — Remove auto-pause-on-silence
 
 The v2.0.6 auto-pause-on-silence detector was a false-positive-prone heuristic that kept firing on legitimate autonomous controller work. Every patch (v3.0.5 threshold raise 5→20, v3.0.6 tool_use as engagement) reduced false-positives but never eliminated them. The detector was originally added for the degenerate "controller refuses to engage" case, but for normal autonomous runs (which is the product's actual use case), it just paused goals that were making progress.

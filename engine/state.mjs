@@ -114,6 +114,7 @@ export const KNOWN_HISTORY_EVENTS = Object.freeze([
   'evidence-added',
   'budget-warning',
   'budget-exhausted',
+  'budget-extended',
   'achieved',
   'unmet',
   'cleared',
