@@ -4,6 +4,39 @@ All notable changes to Better Goal (formerly `claude-code-goal-mode`) are docume
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.5 — Raise auto-pause silenceThreshold default 5 → 20
+
+User feedback 2026-05-12: the v2.0.6 auto-pause-on-silence detector was too aggressive for autonomous production runs. Controllers legitimately spend 5-10 turns in exploration phases (reading files, running tests, iterating) without emitting goal-mode tags. The 5-turn threshold (calibrated against the degenerate "controller refuses to engage" case) triggered false-positive auto-pause on legitimate work.
+
+This release raises the default to 20. Auto-pause remains an early-warning safety net layered on top of the triple budget (iterations/tokens/wallclock) — it now triggers only on genuine controller-stuck patterns, not on exploration.
+
+### Changed
+- `engine/plugin-config.mjs`: `silenceThreshold` default `5` → `20`.
+- `engine/stop-hook.mjs`: `SILENCE_THRESHOLD` constant now sourced from `cfg.silenceThreshold` (was hard-coded `5`). Config-driven end-to-end.
+- `tests/auto-pause-on-silence.test.mjs` setup: explicit `silenceThreshold: 5` in fixture config to preserve existing test semantics without ballooning to 20-iteration loops.
+- `tests/plugin-config.test.mjs`: default-value assertions updated.
+- README Status block bumped to v3.0.5.
+
+### NOT changed
+- Auto-pause-on-silence still active (just at higher threshold).
+- Triple-budget hard ceiling unchanged.
+- `stale-review-pending detector` (v3.0.1) unchanged.
+- All v3 CLI verbs unchanged.
+- State schema unchanged.
+
+### How to override
+
+Per-project: `.claude/goals/active/config.json`:
+```json
+{ "silenceThreshold": 10 }
+```
+
+Per-user: `~/.claude/plugins/goal-mode/config.json` (same shape).
+
+To restore old aggressive default: set `silenceThreshold: 5`. To effectively disable: set to a large number like `1000`.
+
+---
+
 ## v3.0.4 — Auto-drive restored as default (correct out-of-the-box behavior)
 
 User feedback 2026-05-12: the v3.0.0 default of `stopHookDriver: false` (Stop-hook returns null on `pursuing`) was an over-correction. The original product value of goal-mode / Better Goal is "set a verifiable objective, walk away, come back finished" — that requires auto-drive. The silence-loop bug v3.0 was designed to address only manifests when controller agents have memory rules forbidding engagement (a degenerate case), and is already adequately covered by:

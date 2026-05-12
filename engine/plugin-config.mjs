@@ -3,10 +3,10 @@
  * per-project file at <projectRoot>/.claude/goals/active/config.json. Project
  * keys override user keys.
  *
- * Schema (v3.0.4):
+ * Schema (v3.0.5):
  *   schema_version: 1
  *   stopHookDriver: boolean (default true — auto-drive is the product value)
- *   silenceThreshold: int  (default 5)
+ *   silenceThreshold: int  (default 20)
  *
  * Unknown keys are preserved and returned (forward-compat with v3.1+).
  *
@@ -28,7 +28,15 @@ const DEFAULTS = Object.freeze({
   // forbidding engagement. Safety nets (auto-paused-on-silence,
   // stale-review-pending detector) still apply.
   stopHookDriver: true,
-  silenceThreshold: 5,
+  // v3.0.5: raised from 5 to 20. Auto-pause-on-silence is an early-
+  // warning safety net layered on top of triple-budget (iterations,
+  // tokens, wallclock). The 5-turn threshold (v2.0.6) was calibrated
+  // for the degenerate "controller refuses to engage" case; for
+  // production autonomous runs, exploration phases legitimately span
+  // 5-15 turns without tag emission. 20 strikes the balance: catches
+  // real silence (controller stuck) without false-positives on
+  // exploration. Users can override per-project / per-user.
+  silenceThreshold: 20,
 });
 
 function tryReadJson(p) {

@@ -91,9 +91,16 @@ function setupProject() {
   // (continuation injection on lifecycle=pursuing). Pin the fixture
   // to stopHookDriver=true so the v3 default short-circuit (null
   // stdout on pursuing) doesn't fire.
+  //
+  // v3.0.5: silenceThreshold default was raised 5 → 20 for autonomous-
+  // run friendliness. These tests exercise the trigger semantics
+  // (auto-pause fires AT threshold) — pin to 5 in the fixture to
+  // preserve existing test inputs (4 silent → next turn pauses)
+  // without ballooning to 20-iteration loops. The trigger logic is
+  // identical; only the threshold value used as the fixture is fixed.
   fs.writeFileSync(
     path.join(activeDir(root), 'config.json'),
-    JSON.stringify({ schema_version: 1, stopHookDriver: true }),
+    JSON.stringify({ schema_version: 1, stopHookDriver: true, silenceThreshold: 5 }),
   );
   fs.writeFileSync(notesPath(root), '');
   return root;
