@@ -4,6 +4,26 @@ All notable changes to Better Goal (formerly `claude-code-goal-mode`) are docume
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.3 — Auto-promote pending → pursuing on first v3 CLI engagement
+
+Closes a deadlock user-reported 2026-05-12 where a cursor stuck in `status=pending` (from historical v2 advance paths or after `/goal-mode:goal-resume`) made v3 CLI verbs (`evidence-add`, `achieve`) un-callable.
+
+### Added
+- `engine/evidence-add.mjs` + `engine/achieve.mjs`: auto-promote `cursor.status` from `pending → pursuing` on first invocation when `lifecycle === 'pursuing'` and `cursor.type === 'task'`. Recorded as a `cursor-engaged` history event with reason flag for traceability.
+- New history event kind: `cursor-engaged` (added to `KNOWN_HISTORY_EVENTS` in `engine/state.mjs`).
+- 7 new tests in `tests/v3-auto-promote-pending.test.mjs` covering the promote conditions + non-promote cases (lifecycle, non-task, terminal-status).
+
+### Why
+Pre-v3 (v2.0.6 driver mode), agents emitted `<task-status>pursuing</task-status>` as part of doing work — that tag transitioned `pending → pursuing` via `apply-mutations.mjs`. The v3 explicit CLI design assumed cursors were already in `pursuing` (or `review-pending`) by the time a verb was called, but historical v2 state and `goal-resume` left them in `pending`. Auto-promote on first engagement removes the need for an extra "engage cursor" verb and matches the v2 implicit pattern semantically.
+
+### Unchanged
+- v3 default mode (Stop-hook hint-only).
+- Legacy v2 driver mode (`stopHookDriver: true`) — unaffected; agents continue to emit `<task-status>pursuing</>` as before.
+- Reviewer-independence, escape-hatch, auto-pause, stale-review detector — all preserved.
+- State schema (`schema_version: 2`).
+
+---
+
 ## v3.0.2 — Brand rename to "Better Goal" (cosmetic)
 
 Surface rename only. Zero code changes, zero behaviour changes.
