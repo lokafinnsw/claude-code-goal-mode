@@ -3,12 +3,13 @@
  * per-project file at <projectRoot>/.claude/goals/active/config.json. Project
  * keys override user keys.
  *
- * Schema (v3.0.5):
+ * Schema (v3.0.7):
  *   schema_version: 1
  *   stopHookDriver: boolean (default true — auto-drive is the product value)
- *   silenceThreshold: int  (default 20)
  *
  * Unknown keys are preserved and returned (forward-compat with v3.1+).
+ * `silenceThreshold` (v2.0.6–v3.0.6) is silently ignored — auto-pause-on-
+ * silence was removed in v3.0.7; triple budget is the sole safety net.
  *
  * Pure read-only — no writes. Never throws (malformed JSON returns null
  * from tryReadJson, which spreads as undefined into defaults).
@@ -25,18 +26,8 @@ const DEFAULTS = Object.freeze({
   // false (hint-only mode) is opt-in for users who want to drive
   // explicitly via /goal-mode:goal-current + evidence-add + achieve
   // CLI verbs, or who have a controller agent with memory rules
-  // forbidding engagement. Safety nets (auto-paused-on-silence,
-  // stale-review-pending detector) still apply.
+  // forbidding engagement. Stale-review-pending detector still applies.
   stopHookDriver: true,
-  // v3.0.5: raised from 5 to 20. Auto-pause-on-silence is an early-
-  // warning safety net layered on top of triple-budget (iterations,
-  // tokens, wallclock). The 5-turn threshold (v2.0.6) was calibrated
-  // for the degenerate "controller refuses to engage" case; for
-  // production autonomous runs, exploration phases legitimately span
-  // 5-15 turns without tag emission. 20 strikes the balance: catches
-  // real silence (controller stuck) without false-positives on
-  // exploration. Users can override per-project / per-user.
-  silenceThreshold: 20,
 });
 
 function tryReadJson(p) {
