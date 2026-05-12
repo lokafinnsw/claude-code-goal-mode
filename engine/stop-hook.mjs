@@ -417,7 +417,9 @@ export async function runStopHook({ stdin, projectRoot }) {
       'node-blocked',
       'cursor-advanced',
     ]);
-    const SILENCE_THRESHOLD = 5;
+    // v3.0.5: threshold is config-driven (default 20). Sourced from
+    // cfg.silenceThreshold (project override → user override → DEFAULTS).
+    const SILENCE_THRESHOLD = cfg.silenceThreshold;
     const turnHadEngagement = turnHistory.some((h) => ENGAGEMENT_EVENTS.has(h.event));
     const currentSilent = newState.consecutive_silent_turns ?? 0;
     if (turnHadEngagement) {

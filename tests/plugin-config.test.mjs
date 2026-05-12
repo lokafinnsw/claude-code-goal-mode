@@ -22,7 +22,7 @@ describe('loadPluginConfig', () => {
     const homeDir = mkTmp();
     const cfg = loadPluginConfig(root, { homeDir });
     expect(cfg.stopHookDriver).toBe(true);  // v3.0.4: auto-drive default
-    expect(cfg.silenceThreshold).toBe(5);
+    expect(cfg.silenceThreshold).toBe(20);  // v3.0.5: raised from 5 → 20
     expect(cfg.schema_version).toBe(1);
   });
 
@@ -36,7 +36,7 @@ describe('loadPluginConfig', () => {
     );
     const cfg = loadPluginConfig(root, { homeDir });
     expect(cfg.stopHookDriver).toBe(true);
-    expect(cfg.silenceThreshold).toBe(5);  // default preserved
+    expect(cfg.silenceThreshold).toBe(20);  // v3.0.5 default preserved
   });
 
   it('reads per-project config when present (no user config)', () => {
