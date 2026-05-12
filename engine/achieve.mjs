@@ -36,6 +36,9 @@ export function achieveCursor(projectRoot) {
     if (!tree) return { ok: false, error: 'no tree.json found' };
     const cursor = findNodeById(tree, state.cursor);
     if (!cursor) return { ok: false, error: `cursor ${state.cursor} not found in tree` };
+    if (cursor.type !== 'task') {
+      return { ok: false, error: `cannot achieve non-task node (cursor=${cursor.id}, type=${cursor.type})` };
+    }
 
     // Compute missing criteria BEFORE invoking applyMutations so the caller
     // gets a clear error rather than a silent no-op (applyMutations's

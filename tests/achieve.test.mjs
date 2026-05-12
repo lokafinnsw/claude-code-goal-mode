@@ -107,4 +107,14 @@ describe('achieveCursor', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/No active goal/);
   });
+
+  it('rejects when cursor points to non-task node (sprint/epic)', () => {
+    const root = setup();
+    const st = loadState(root);
+    st.cursor = 's';  // sprint root, not a task
+    saveState(root, st);
+    const r = achieveCursor(root);
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/non-task/);
+  });
 });
