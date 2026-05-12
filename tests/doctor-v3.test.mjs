@@ -21,7 +21,9 @@ describe('doctor checkLegacyStopHookDriver', () => {
     const root = mkRoot();
     const r = checkLegacyStopHookDriver(root);
     expect(r.status).toBe('ok');
+    expect(r.severity).toBe('info');
     expect(r.message).toMatch(/v3 hint-only/);
+    expect(r.fix).toBeNull();
   });
 
   it('returns warn when stopHookDriver=true (per-project)', () => {
@@ -33,13 +35,15 @@ describe('doctor checkLegacyStopHookDriver', () => {
     );
     const r = checkLegacyStopHookDriver(root);
     expect(r.status).toBe('warn');
+    expect(r.severity).toBe('warn');
     expect(r.message).toMatch(/legacy v2 driver/i);
     expect(r.message).toMatch(/config\.json/);
+    expect(r.fix).toMatch(/stopHookDriver/);
   });
 
-  it('check has the expected name field', () => {
+  it('check has the expected id field', () => {
     const root = mkRoot();
     const r = checkLegacyStopHookDriver(root);
-    expect(r.name).toBe('legacy-stop-hook-driver');
+    expect(r.id).toBe('legacy-stop-hook-driver');
   });
 });
