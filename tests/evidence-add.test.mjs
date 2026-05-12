@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,8 +6,17 @@ import { evidenceAdd } from '../engine/evidence-add.mjs';
 import { saveState, saveTree, loadState, loadTree } from '../engine/state.mjs';
 import { activeDir } from '../engine/paths.mjs';
 
+const tmpRoots = [];
+afterEach(() => {
+  for (const r of tmpRoots) {
+    try { fs.rmSync(r, { recursive: true, force: true }); } catch {}
+  }
+  tmpRoots.length = 0;
+});
+
 function setup() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v3-evadd-'));
+  tmpRoots.push(root);
   fs.mkdirSync(activeDir(root), { recursive: true });
   saveTree(root, {
     schema_version: 2, goal_id: 'g', mission: 'm',
@@ -52,7 +61,6 @@ describe('evidenceAdd', () => {
     expect(t.evidence).toHaveLength(1);
     expect(t.evidence[0].file).toBe('src/foo.ts');
     expect(t.evidence[0].criterion_index).toBe(0);
-    fs.rmSync(root, { recursive: true, force: true });
   });
 
   it('rejects when lifecycle !== pursuing', () => {
@@ -63,6 +71,44 @@ describe('evidenceAdd', () => {
     const r = evidenceAdd(root, { criterion: 0, file: 'f', note: '' });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/lifecycle/);
-    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('rejects when state.json is missing (no active goal)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v3-evadd-nostate-'));
+    tmpRoots.push(root);
+    const r = evidenceAdd(root, { criterion: 0, file: 'f', note: '' });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/no active goal/i);
+  });
+
+  it('rejects when tree.json is missing', () => {
+    const root = setup();
+    const treePath = path.join(activeDir(root), 'tree.json');
+    fs.rmSync(treePath, { force: true });
+    const r = evidenceAdd(root, { criterion: 0, file: 'f', note: '' });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/tree/i);
+  });
+
+  it('rejects when cursor is not in tree', () => {
+    const root = setup();
+    const st = loadState(root);
+    st.cursor = 'nonexistent-id';
+    saveState(root, st);
+    const r = evidenceAdd(root, { criterion: 0, file: 'f', note: '' });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/cursor/i);
+    expect(r.error).toMatch(/not.*tree/i);
+  });
+
+  it('rejects when cursor.status is achieved', () => {
+    const root = setup();
+    const tree = loadTree(root);
+    tree.root.children[0].status = 'achieved';
+    saveTree(root, tree);
+    const r = evidenceAdd(root, { criterion: 0, file: 'f', note: '' });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/pursuing or review-pending/i);
+    expect(r.error).toMatch(/achieved/);
   });
 });

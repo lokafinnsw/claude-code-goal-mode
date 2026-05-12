@@ -24,30 +24,45 @@ import { applyMutations } from './apply-mutations.mjs';
 import { activeDir } from './paths.mjs';
 import { withLockSync } from './lock.mjs';
 
-export function evidenceAdd(projectRoot, opts) {
+export function evidenceAdd(
+  projectRoot,
+  {
+    criterion = null,
+    file = null,
+    line = null,
+    command = null,
+    exit_code = null,
+    note = '',
+  } = {}
+) {
   return withLockSync(activeDir(projectRoot), 'evidence-add', {}, () => {
     const state = loadState(projectRoot);
-    if (!state) return { ok: false, error: 'no active goal' };
+    if (!state) return { ok: false, error: 'No active goal.' };
     if (state.lifecycle !== 'pursuing') {
       return { ok: false, error: `cannot add evidence from lifecycle=${state.lifecycle}` };
     }
     const tree = loadTree(projectRoot);
-    if (!tree) return { ok: false, error: 'no tree.json' };
+    if (!tree) return { ok: false, error: 'no tree.json found' };
     const cursor = findNodeById(tree, state.cursor);
-    if (!cursor) return { ok: false, error: `cursor ${state.cursor} not in tree` };
+    if (!cursor) {
+      return { ok: false, error: `cursor ${state.cursor} not found in tree` };
+    }
     if (cursor.status !== 'pursuing' && cursor.status !== 'review-pending') {
-      return { ok: false, error: `cursor.status=${cursor.status}; expected pursuing or review-pending` };
+      return {
+        ok: false,
+        error: `cursor not pursuing or review-pending (is ${cursor.status}, lifecycle=${state.lifecycle})`,
+      };
     }
 
     const ts = new Date().toISOString();
     const tag = {
       kind: 'evidence',
-      criterion: opts.criterion ?? null,
-      file: opts.file ?? null,
-      line: opts.line ?? null,
-      command: opts.command ?? null,
-      exit_code: opts.exit_code ?? null,
-      note: opts.note ?? '',
+      criterion,
+      file,
+      line,
+      command,
+      exit_code,
+      note,
     };
     const { tree: tree2, state: state2 } = applyMutations(tree, state, [tag], ts);
     saveTree(projectRoot, tree2);
