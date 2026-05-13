@@ -4,6 +4,28 @@ All notable changes to Better Goal (formerly `claude-code-goal-mode`) are docume
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.0.9 — `/goal-extend` now reopens `unmet` lifecycle + resets 3-NOGO-blocked cursor
+
+Closes a gap user-reported 2026-05-13: when a goal hit 3-strike NOGO escalation (lifecycle=unmet), `/goal-extend` rejected with "cannot extend budget from lifecycle=unmet". User had no in-place recovery; only `/goal-clear --archive` + re-plan from scratch.
+
+`unmet` is now an `extend`-recoverable lifecycle (same shape as `budget-limited`). When reopened from unmet, the engine also auto-resets the blocking cursor's review-strike counter so work can resume.
+
+### Changed
+- `engine/goal-extend.mjs`: accept `lifecycle in {pursuing, budget-limited, unmet}` (previously rejected `unmet`). On `unmet → pursuing` reopen, when cursor.status='blocked' AND cursor.review_attempts>=3, reset cursor.status='pursuing', cursor.review_attempts=0, cursor.blocker_reason=null. Audit trail: `budget-extended` history event payload includes `transition: {from: 'unmet', to: 'pursuing'}` and `cursor_reset: {node_id, from_status, from_review_attempts, from_blocker_reason}`.
+- `tests/goal-extend.test.mjs`: +4 tests covering unmet→pursuing reopen with/without cursor reset, plus rejection of `awaiting-manual-approval` and `draft`.
+
+### Why this is safe
+- The lifecycle gate is explicit: still rejects `paused, achieved, awaiting-manual-approval, draft, approved`.
+- Cursor reset only fires when cursor is in 3-NOGO escalation state (status=blocked AND review_attempts≥3). Other blocked states are left alone.
+- Audit trail preserved via history event payload.
+- 3-strike-NOGO canon (apply-mutations.mjs) still applies on the next review cycle — if reviewer NOGO's 3 more times, goal goes back to unmet.
+
+### Migration
+- No state schema changes.
+- Existing goals on `unmet` lifecycle are now recoverable via `/goal-extend --tokens +N --time +Nh`.
+
+---
+
 ## v3.0.8 — `/goal-mode:goal-extend` CLI (bump budget on active or budget-limited goal)
 
 Closes a real feature gap: when a goal hits its triple-budget ceiling mid-run (e.g. 91/158 tasks done at 60M token cap), the only recovery pre-v3.0.8 was `/goal-clear --archive` + re-plan from scratch. That loses cursor, history, evidence, audits, and tree shape — destructive when the existing plan is still the right plan and the user just wants more headroom. v3.0.8 adds `goal-extend` to bump limits in-place and transition `budget-limited → pursuing` so work continues on the same plan.
