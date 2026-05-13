@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { saveState, saveTree, loadState } from '../engine/state.mjs';
+import { saveState, saveTree, loadState, loadTree } from '../engine/state.mjs';
 import { activeDir } from '../engine/paths.mjs';
 import { extendBudget } from '../engine/goal-extend.mjs';
 import { parseTokens, parseIter, parseTime } from '../engine/goal-extend-cli.mjs';
@@ -31,6 +31,9 @@ function setup({
   wallMax = 86_400,
   endedAt = null,
   endedReason = null,
+  cursorStatus = 'pursuing',
+  cursorReviewAttempts = 0,
+  cursorBlockerReason = null,
 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'v3-extend-'));
   tmpRoots.push(root);
@@ -46,8 +49,9 @@ function setup({
       children: [{
         id: 't', type: 'task', title: 't', goal: 'tg',
         acceptance_criteria: ['c0'],
-        review: [], validate: null, work_front: null, status: 'pursuing',
-        evidence: [], blocker_reason: null, review_attempts: 0, notes: [], children: [],
+        review: [], validate: null, work_front: null, status: cursorStatus,
+        evidence: [], blocker_reason: cursorBlockerReason,
+        review_attempts: cursorReviewAttempts, notes: [], children: [],
       }],
     },
   });
@@ -196,6 +200,78 @@ describe('extendBudget — lifecycle transitions', () => {
   });
 });
 
+describe('extendBudget — v3.0.9 unmet reopen', () => {
+  it('unmet → pursuing on bump, with 3-NOGO cursor reset', () => {
+    const root = setup({
+      lifecycle: 'unmet',
+      endedAt: '2026-05-13T01:00:00.000Z',
+      endedReason: '3-strike-unmet',
+      cursorStatus: 'blocked',
+      cursorReviewAttempts: 3,
+      cursorBlockerReason: '3 consecutive NOGO verdicts',
+    });
+    const r = extendBudget(root, { tokens: { mode: 'delta', value: 50_000_000 } });
+    expect(r.ok).toBe(true);
+    expect(r.lifecycle_transition).toEqual({ from: 'unmet', to: 'pursuing' });
+    expect(r.cursor_reset).toEqual({
+      node_id: 't',
+      from_status: 'blocked',
+      from_review_attempts: 3,
+      from_blocker_reason: '3 consecutive NOGO verdicts',
+    });
+
+    const st = loadState(root);
+    expect(st.lifecycle).toBe('pursuing');
+    expect(st.ended_at).toBe(null);
+    expect(st.ended_reason).toBe(null);
+
+    const tree = loadTree(root);
+    const cursor = tree.root.children[0];
+    expect(cursor.status).toBe('pursuing');
+    expect(cursor.review_attempts).toBe(0);
+    expect(cursor.blocker_reason).toBe(null);
+
+    const ev = st.history.find(e => e.event === 'budget-extended');
+    expect(ev).toBeTruthy();
+    expect(ev.payload.transition).toEqual({ from: 'unmet', to: 'pursuing' });
+    expect(ev.payload.cursor_reset).toEqual({
+      node_id: 't',
+      from_status: 'blocked',
+      from_review_attempts: 3,
+      from_blocker_reason: '3 consecutive NOGO verdicts',
+    });
+  });
+
+  it('unmet → pursuing on bump where cursor is NOT 3-NOGO-blocked (no cursor reset)', () => {
+    const root = setup({
+      lifecycle: 'unmet',
+      endedAt: '2026-05-13T01:00:00.000Z',
+      endedReason: 'user-abandon',
+      cursorStatus: 'achieved',
+      cursorReviewAttempts: 0,
+      cursorBlockerReason: null,
+    });
+    const r = extendBudget(root, { tokens: { mode: 'delta', value: 50_000_000 } });
+    expect(r.ok).toBe(true);
+    expect(r.lifecycle_transition).toEqual({ from: 'unmet', to: 'pursuing' });
+    expect(r.cursor_reset).toBe(null);
+
+    const st = loadState(root);
+    expect(st.lifecycle).toBe('pursuing');
+    expect(st.ended_at).toBe(null);
+    expect(st.ended_reason).toBe(null);
+
+    // Cursor untouched.
+    const tree = loadTree(root);
+    const cursor = tree.root.children[0];
+    expect(cursor.status).toBe('achieved');
+    expect(cursor.review_attempts).toBe(0);
+
+    const ev = st.history.find(e => e.event === 'budget-extended');
+    expect(ev.payload.cursor_reset).toBe(null);
+  });
+});
+
 describe('extendBudget — preconditions', () => {
   it('rejects when lifecycle is paused', () => {
     const root = setup({ lifecycle: 'paused' });
@@ -209,6 +285,20 @@ describe('extendBudget — preconditions', () => {
     const r = extendBudget(root, { iter: { mode: 'delta', value: 100 } });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/lifecycle=achieved/);
+  });
+
+  it('rejects when lifecycle is awaiting-manual-approval', () => {
+    const root = setup({ lifecycle: 'awaiting-manual-approval' });
+    const r = extendBudget(root, { tokens: { mode: 'delta', value: 50_000_000 } });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/lifecycle=awaiting-manual-approval/);
+  });
+
+  it('still rejects when lifecycle is draft', () => {
+    const root = setup({ lifecycle: 'draft' });
+    const r = extendBudget(root, { tokens: { mode: 'delta', value: 50_000_000 } });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/lifecycle=draft/);
   });
 
   it('rejects when no opts provided', () => {
